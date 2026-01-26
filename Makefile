@@ -18,9 +18,9 @@ GOMOD := $(GOCMD) mod
 
 # Build flags
 LDFLAGS := -s -w \
-	-X 'github.com/kamilkrawczyk/octo/cmd.Version=$(VERSION)' \
-	-X 'github.com/kamilkrawczyk/octo/cmd.BuildTime=$(BUILD_TIME)' \
-	-X 'github.com/kamilkrawczyk/octo/cmd.GitCommit=$(GIT_COMMIT)'
+	-X 'github.com/bsisduck/octo/cmd.Version=$(VERSION)' \
+	-X 'github.com/bsisduck/octo/cmd.BuildTime=$(BUILD_TIME)' \
+	-X 'github.com/bsisduck/octo/cmd.GitCommit=$(GIT_COMMIT)'
 
 # Output directory
 BIN_DIR := bin
@@ -49,7 +49,7 @@ build: deps
 build-debug: deps
 	@echo "Building $(BINARY_NAME) with debug symbols..."
 	@mkdir -p $(BIN_DIR)
-	$(GOBUILD) -ldflags="-X 'github.com/kamilkrawczyk/octo/cmd.Version=$(VERSION)'" -o $(BIN_DIR)/$(BINARY_NAME) .
+	$(GOBUILD) -ldflags="-X 'github.com/bsisduck/octo/cmd.Version=$(VERSION)'" -o $(BIN_DIR)/$(BINARY_NAME) .
 
 # Run the application
 run: build

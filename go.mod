@@ -1,4 +1,4 @@
-module github.com/kamilkrawczyk/octo
+module github.com/bsisduck/octo
 
 go 1.24.2
 

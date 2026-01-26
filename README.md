@@ -237,7 +237,7 @@ octo analyze -t images
 
 ### Build
 ```bash
-git clone https://github.com/kamilkrawczyk/octo.git
+git clone https://github.com/bsisduck/octo.git
 cd octo
 make build
 ```

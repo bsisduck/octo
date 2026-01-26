@@ -5,7 +5,7 @@ package main
 import (
 	"os"
 
-	"github.com/kamilkrawczyk/octo/cmd"
+	"github.com/bsisduck/octo/cmd"
 )
 
 func main() {
