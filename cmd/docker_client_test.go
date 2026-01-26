@@ -60,6 +60,15 @@ func TestContainerInfo(t *testing.T) {
 	if info.Name != "test-container" {
 		t.Errorf("ContainerInfo.Name = %q, want %q", info.Name, "test-container")
 	}
+	if info.Image != "nginx:latest" {
+		t.Errorf("ContainerInfo.Image = %q, want %q", info.Image, "nginx:latest")
+	}
+	if info.Status != "Up 2 hours" {
+		t.Errorf("ContainerInfo.Status = %q, want %q", info.Status, "Up 2 hours")
+	}
+	if info.State != "running" {
+		t.Errorf("ContainerInfo.State = %q, want %q", info.State, "running")
+	}
 }
 
 func TestImageInfo(t *testing.T) {

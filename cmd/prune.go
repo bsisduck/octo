@@ -109,7 +109,7 @@ func runPrune(cmd *cobra.Command, args []string) {
 	if !force {
 		fmt.Printf("Are you sure you want to continue? [y/N]: ")
 		var response string
-		fmt.Scanln(&response)
+		_, _ = fmt.Scanln(&response)
 		if strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
 			fmt.Println()
 			fmt.Println(infoStyle.Render("Operation cancelled."))
@@ -147,7 +147,8 @@ func runPrune(cmd *cobra.Command, args []string) {
 	// Prune volumes
 	if pruneVolumes {
 		fmt.Print("  Pruning volumes... ")
-		volumeReclaimed, err := client.PruneVolumes()
+		var volumeReclaimed uint64
+		volumeReclaimed, err = client.PruneVolumes()
 		if err != nil {
 			fmt.Println(warnStyle.Render(fmt.Sprintf("error: %v", err)))
 		} else {

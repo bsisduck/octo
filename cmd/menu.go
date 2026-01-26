@@ -29,17 +29,17 @@ func (m *InteractiveMenu) Run() error {
 
 // Menu model
 type menuModel struct {
-	selected    int
-	items       []menuItem
-	width       int
-	height      int
-	err         error
-	dockerOK    bool
-	diskUsage   *DiskUsageInfo
-	containers  int
-	running     int
-	images      int
-	volumes     int
+	selected   int
+	items      []menuItem
+	width      int
+	height     int
+	err        error
+	dockerOK   bool
+	diskUsage  *DiskUsageInfo
+	containers int
+	running    int
+	images     int
+	volumes    int
 }
 
 type menuItem struct {
@@ -286,21 +286,4 @@ func (m menuModel) View() string {
 	b.WriteString("\n")
 
 	return b.String()
-}
-
-// After the TUI exits, we need to run the actual command
-// This is done in the main Run() function by checking what was selected
-func executeMenuSelection(action string) {
-	switch action {
-	case "status":
-		runStatus(statusCmd, []string{})
-	case "analyze":
-		runAnalyze(analyzeCmd, []string{})
-	case "cleanup":
-		runCleanup(cleanupCmd, []string{})
-	case "prune":
-		runPrune(pruneCmd, []string{})
-	case "diagnose":
-		runDiagnose(diagnoseCmd, []string{})
-	}
 }

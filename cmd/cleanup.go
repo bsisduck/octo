@@ -257,6 +257,6 @@ func runCleanup(cmd *cobra.Command, args []string) {
 func confirmAction(prompt string) bool {
 	fmt.Printf("  %s [y/N]: ", prompt)
 	var response string
-	fmt.Scanln(&response)
+	_, _ = fmt.Scanln(&response)
 	return strings.ToLower(response) == "y" || strings.ToLower(response) == "yes"
 }

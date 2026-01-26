@@ -83,18 +83,17 @@ type ResourceEntry struct {
 }
 
 type analyzeModel struct {
-	client       *DockerClient
-	entries      []ResourceEntry
-	selected     int
-	offset       int
-	width        int
-	height       int
-	err          error
-	loading      bool
-	filterType   ResourceType
-	showDangling bool
+	entries       []ResourceEntry
+	selected      int
+	offset        int
+	width         int
+	height        int
+	err           error
+	loading       bool
+	filterType    ResourceType
+	showDangling  bool
 	deleteConfirm bool
-	deleteTarget *ResourceEntry
+	deleteTarget  *ResourceEntry
 }
 
 type analyzeDataMsg struct {
