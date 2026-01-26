@@ -112,7 +112,7 @@ func runPrune(cmd *cobra.Command, args []string) {
 		_, _ = fmt.Scanln(&response)
 		if strings.ToLower(response) != "y" && strings.ToLower(response) != "yes" {
 			fmt.Println()
-			fmt.Println(infoStyle.Render("Operation cancelled."))
+			fmt.Println(infoStyle.Render("Operation canceled."))
 			fmt.Println()
 			return
 		}

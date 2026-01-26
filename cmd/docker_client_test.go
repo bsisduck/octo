@@ -162,8 +162,20 @@ func TestNetworkInfo(t *testing.T) {
 		Containers: 3,
 	}
 
+	if info.ID != "net123" {
+		t.Errorf("NetworkInfo.ID = %q, want %q", info.ID, "net123")
+	}
 	if info.Name != "my-network" {
 		t.Errorf("NetworkInfo.Name = %q, want %q", info.Name, "my-network")
+	}
+	if info.Driver != "bridge" {
+		t.Errorf("NetworkInfo.Driver = %q, want %q", info.Driver, "bridge")
+	}
+	if info.Scope != "local" {
+		t.Errorf("NetworkInfo.Scope = %q, want %q", info.Scope, "local")
+	}
+	if info.Internal {
+		t.Error("NetworkInfo.Internal = true, want false")
 	}
 	if info.Containers != 3 {
 		t.Errorf("NetworkInfo.Containers = %d, want %d", info.Containers, 3)
@@ -180,6 +192,24 @@ func TestDiskUsageInfo(t *testing.T) {
 		Total:            19327352832,
 	}
 
+	if info.Images != 10737418240 {
+		t.Errorf("DiskUsageInfo.Images = %d, want %d", info.Images, 10737418240)
+	}
+	if info.Containers != 5368709120 {
+		t.Errorf("DiskUsageInfo.Containers = %d, want %d", info.Containers, 5368709120)
+	}
+	if info.Volumes != 2147483648 {
+		t.Errorf("DiskUsageInfo.Volumes = %d, want %d", info.Volumes, 2147483648)
+	}
+	if info.BuildCache != 1073741824 {
+		t.Errorf("DiskUsageInfo.BuildCache = %d, want %d", info.BuildCache, 1073741824)
+	}
+	if info.TotalReclaimable != 8589934592 {
+		t.Errorf("DiskUsageInfo.TotalReclaimable = %d, want %d", info.TotalReclaimable, 8589934592)
+	}
+	if info.Total != 19327352832 {
+		t.Errorf("DiskUsageInfo.Total = %d, want %d", info.Total, 19327352832)
+	}
 	if info.Total < info.TotalReclaimable {
 		t.Errorf("Total (%d) should be >= TotalReclaimable (%d)", info.Total, info.TotalReclaimable)
 	}

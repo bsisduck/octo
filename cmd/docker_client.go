@@ -12,6 +12,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
@@ -265,7 +266,7 @@ func (dc *DockerClient) ListVolumes() ([]VolumeInfo, error) {
 
 // ListNetworks returns all networks
 func (dc *DockerClient) ListNetworks() ([]NetworkInfo, error) {
-	networks, err := dc.Client.NetworkList(dc.ctx, types.NetworkListOptions{})
+	networks, err := dc.Client.NetworkList(dc.ctx, network.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
