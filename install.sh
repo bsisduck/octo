@@ -21,10 +21,10 @@ ICON_SUCCESS="✓"
 ICON_ERROR="✗"
 ICON_INFO="→"
 
-# Print functions
-info() { echo -e "${BLUE}${ICON_INFO}${NC} $1"; }
-success() { echo -e "${GREEN}${ICON_SUCCESS}${NC} $1"; }
-warn() { echo -e "${YELLOW}!${NC} $1"; }
+# Print functions (all go to stderr to avoid polluting stdout in subshells)
+info() { echo -e "${BLUE}${ICON_INFO}${NC} $1" >&2; }
+success() { echo -e "${GREEN}${ICON_SUCCESS}${NC} $1" >&2; }
+warn() { echo -e "${YELLOW}!${NC} $1" >&2; }
 error() { echo -e "${RED}${ICON_ERROR}${NC} $1" >&2; }
 
 # Detect OS and architecture
