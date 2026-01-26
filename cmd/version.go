@@ -1,0 +1,49 @@
+package cmd
+
+import (
+	"fmt"
+	"runtime"
+
+	"github.com/spf13/cobra"
+)
+
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Show version information",
+	Long:  "Display Octo version, build information, and Docker connection status.",
+	Run:   runVersion,
+}
+
+func runVersion(cmd *cobra.Command, args []string) {
+	fmt.Printf("Octo version %s\n", Version)
+	fmt.Printf("Go version: %s\n", runtime.Version())
+	fmt.Printf("OS/Arch: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+
+	if BuildTime != "" {
+		fmt.Printf("Build time: %s\n", BuildTime)
+	}
+	if GitCommit != "" {
+		fmt.Printf("Git commit: %s\n", GitCommit)
+	}
+
+	// Check Docker connection
+	client, err := NewDockerClient()
+	if err != nil {
+		fmt.Printf("Docker: Not connected (%v)\n", err)
+		return
+	}
+	defer client.Close()
+
+	info, err := client.GetServerInfo()
+	if err != nil {
+		fmt.Printf("Docker: Error getting info (%v)\n", err)
+		return
+	}
+
+	fmt.Printf("Docker version: %s\n", info.ServerVersion)
+	fmt.Printf("Docker API: %s\n", client.Client.ClientVersion())
+	fmt.Printf("Docker OS: %s\n", info.OperatingSystem)
+	fmt.Printf("Docker Arch: %s\n", info.Architecture)
+	fmt.Printf("Containers: %d (running: %d)\n", info.Containers, info.ContainersRunning)
+	fmt.Printf("Images: %d\n", info.Images)
+}
