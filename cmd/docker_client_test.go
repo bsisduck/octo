@@ -43,13 +43,14 @@ func TestDetectDockerSocket(t *testing.T) {
 }
 
 func TestContainerInfo(t *testing.T) {
+	created := time.Now()
 	info := ContainerInfo{
 		ID:      "abc123",
 		Name:    "test-container",
 		Image:   "nginx:latest",
 		Status:  "Up 2 hours",
 		State:   "running",
-		Created: time.Now(),
+		Created: created,
 		Ports:   "80/tcp",
 		Size:    1024,
 	}
@@ -69,21 +70,46 @@ func TestContainerInfo(t *testing.T) {
 	if info.State != "running" {
 		t.Errorf("ContainerInfo.State = %q, want %q", info.State, "running")
 	}
+	if info.Created != created {
+		t.Errorf("ContainerInfo.Created = %v, want %v", info.Created, created)
+	}
+	if info.Ports != "80/tcp" {
+		t.Errorf("ContainerInfo.Ports = %q, want %q", info.Ports, "80/tcp")
+	}
+	if info.Size != 1024 {
+		t.Errorf("ContainerInfo.Size = %d, want %d", info.Size, 1024)
+	}
 }
 
 func TestImageInfo(t *testing.T) {
+	created := time.Now()
 	info := ImageInfo{
 		ID:         "sha256abc",
 		Repository: "nginx",
 		Tag:        "latest",
 		Size:       52428800,
-		Created:    time.Now(),
+		Created:    created,
 		Containers: 2,
 		Dangling:   false,
 	}
 
+	if info.ID != "sha256abc" {
+		t.Errorf("ImageInfo.ID = %q, want %q", info.ID, "sha256abc")
+	}
 	if info.Repository != "nginx" {
 		t.Errorf("ImageInfo.Repository = %q, want %q", info.Repository, "nginx")
+	}
+	if info.Tag != "latest" {
+		t.Errorf("ImageInfo.Tag = %q, want %q", info.Tag, "latest")
+	}
+	if info.Size != 52428800 {
+		t.Errorf("ImageInfo.Size = %d, want %d", info.Size, 52428800)
+	}
+	if info.Created != created {
+		t.Errorf("ImageInfo.Created = %v, want %v", info.Created, created)
+	}
+	if info.Containers != 2 {
+		t.Errorf("ImageInfo.Containers = %d, want %d", info.Containers, 2)
 	}
 	if info.Dangling {
 		t.Error("ImageInfo.Dangling = true, want false")
@@ -91,18 +117,35 @@ func TestImageInfo(t *testing.T) {
 }
 
 func TestVolumeInfo(t *testing.T) {
+	created := time.Now()
+	labels := map[string]string{"env": "test"}
 	info := VolumeInfo{
 		Name:       "my-volume",
 		Driver:     "local",
 		Mountpoint: "/var/lib/docker/volumes/my-volume/_data",
 		Size:       1048576,
-		Created:    time.Now(),
-		Labels:     map[string]string{"env": "test"},
+		Created:    created,
+		Labels:     labels,
 		InUse:      true,
 	}
 
 	if info.Name != "my-volume" {
 		t.Errorf("VolumeInfo.Name = %q, want %q", info.Name, "my-volume")
+	}
+	if info.Driver != "local" {
+		t.Errorf("VolumeInfo.Driver = %q, want %q", info.Driver, "local")
+	}
+	if info.Mountpoint != "/var/lib/docker/volumes/my-volume/_data" {
+		t.Errorf("VolumeInfo.Mountpoint = %q, want %q", info.Mountpoint, "/var/lib/docker/volumes/my-volume/_data")
+	}
+	if info.Size != 1048576 {
+		t.Errorf("VolumeInfo.Size = %d, want %d", info.Size, 1048576)
+	}
+	if info.Created != created {
+		t.Errorf("VolumeInfo.Created = %v, want %v", info.Created, created)
+	}
+	if info.Labels["env"] != "test" {
+		t.Errorf("VolumeInfo.Labels[\"env\"] = %q, want %q", info.Labels["env"], "test")
 	}
 	if !info.InUse {
 		t.Error("VolumeInfo.InUse = false, want true")
