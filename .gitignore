@@ -49,3 +49,6 @@ temp/
 # Build artifacts
 dist/
 release/
+
+# Development logs (local only)
+DEVELOPMENT_LOG.md
