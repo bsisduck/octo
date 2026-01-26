@@ -5,7 +5,7 @@
 set -euo pipefail
 
 # Configuration
-REPO="kamilkrawczyk/octo"
+REPO="bsisduck/octo"
 BINARY_NAME="octo"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 

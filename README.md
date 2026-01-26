@@ -19,17 +19,17 @@ Octo is a powerful Docker container management CLI tool that helps you monitor, 
 
 **Via Install Script (Recommended)**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kamilkrawczyk/octo/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/bsisduck/octo/main/install.sh | bash
 ```
 
 **Via Go**
 ```bash
-go install github.com/kamilkrawczyk/octo@latest
+go install github.com/bsisduck/octo@latest
 ```
 
 **From Source**
 ```bash
-git clone https://github.com/kamilkrawczyk/octo.git
+git clone https://github.com/bsisduck/octo.git
 cd octo
 make install
 ```
