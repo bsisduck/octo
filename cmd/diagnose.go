@@ -147,7 +147,10 @@ func runDiagnose(cmd *cobra.Command, args []string) {
 			Details: err.Error(),
 		})
 	} else {
-		reclaimablePercent := float64(diskUsage.TotalReclaimable) / float64(diskUsage.Total) * 100
+		var reclaimablePercent float64
+		if diskUsage.Total > 0 {
+			reclaimablePercent = float64(diskUsage.TotalReclaimable) / float64(diskUsage.Total) * 100
+		}
 		if reclaimablePercent > 50 {
 			fmt.Println(warnStyle.Render(fmt.Sprintf("%.0f%% reclaimable", reclaimablePercent)))
 			results = append(results, DiagnosticResult{

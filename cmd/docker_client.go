@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -180,7 +181,7 @@ func (dc *DockerClient) ListContainers(all bool) ([]ContainerInfo, error) {
 		ports := formatPorts(c.Ports)
 
 		result[i] = ContainerInfo{
-			ID:      c.ID[:12],
+			ID:      truncateID(c.ID, 12),
 			Name:    name,
 			Image:   c.Image,
 			Status:  c.Status,
@@ -206,7 +207,7 @@ func (dc *DockerClient) ListImages(all bool) ([]ImageInfo, error) {
 		// Handle images with multiple tags
 		if len(img.RepoTags) == 0 {
 			result = append(result, ImageInfo{
-				ID:       img.ID[7:19], // Remove "sha256:" prefix
+				ID:       trimImageID(img.ID),
 				Size:     img.Size,
 				Created:  time.Unix(img.Created, 0),
 				Dangling: true,
@@ -215,7 +216,7 @@ func (dc *DockerClient) ListImages(all bool) ([]ImageInfo, error) {
 			for _, tag := range img.RepoTags {
 				repo, tagName := parseImageTag(tag)
 				result = append(result, ImageInfo{
-					ID:         img.ID[7:19],
+					ID:         trimImageID(img.ID),
 					Repository: repo,
 					Tag:        tagName,
 					Size:       img.Size,
@@ -274,7 +275,7 @@ func (dc *DockerClient) ListNetworks() ([]NetworkInfo, error) {
 	result := make([]NetworkInfo, len(networks))
 	for i, n := range networks {
 		result[i] = NetworkInfo{
-			ID:         n.ID[:12],
+			ID:         truncateID(n.ID, 12),
 			Name:       n.Name,
 			Driver:     n.Driver,
 			Scope:      n.Scope,
@@ -342,7 +343,7 @@ func (dc *DockerClient) GetDanglingImages() ([]ImageInfo, error) {
 	result := make([]ImageInfo, len(images))
 	for i, img := range images {
 		result[i] = ImageInfo{
-			ID:       img.ID[7:19],
+			ID:       trimImageID(img.ID),
 			Size:     img.Size,
 			Created:  time.Unix(img.Created, 0),
 			Dangling: true,
@@ -368,10 +369,13 @@ func (dc *DockerClient) GetStoppedContainers() ([]ContainerInfo, error) {
 	for i, c := range containers {
 		name := ""
 		if len(c.Names) > 0 {
-			name = c.Names[0][1:]
+			name = c.Names[0]
+			if len(name) > 0 && name[0] == '/' {
+				name = name[1:]
+			}
 		}
 		result[i] = ContainerInfo{
-			ID:      c.ID[:12],
+			ID:      truncateID(c.ID, 12),
 			Name:    name,
 			Image:   c.Image,
 			Status:  c.Status,
@@ -479,6 +483,25 @@ func (dc *DockerClient) PruneBuildCache(all bool) (uint64, error) {
 }
 
 // Helper functions
+
+// truncateID returns the first maxLen characters of an ID string.
+// If the string is shorter than maxLen, returns the full string.
+func truncateID(id string, maxLen int) string {
+	if len(id) > maxLen {
+		return id[:maxLen]
+	}
+	return id
+}
+
+// trimImageID strips the "sha256:" prefix from a Docker image ID
+// and returns up to 12 characters.
+func trimImageID(id string) string {
+	const prefix = "sha256:"
+	if strings.HasPrefix(id, prefix) {
+		id = id[len(prefix):]
+	}
+	return truncateID(id, 12)
+}
 
 func formatPorts(ports []types.Port) string {
 	if len(ports) == 0 {
