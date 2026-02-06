@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/bsisduck/octo/internal/docker"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/bsisduck/octo/internal/ui/styles"
 	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 )
@@ -39,12 +39,12 @@ type DiagnosticResult struct {
 func runDiagnose(cmd *cobra.Command, args []string) error {
 	verbose, _ := cmd.Flags().GetBool("verbose")
 
-	// Styles
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("69"))
-	okStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	// Styles (defined in internal/ui/styles/theme.go)
+	titleStyle := styles.Title
+	okStyle := styles.Success
+	warnStyle := styles.Warning
+	errorStyle := styles.Error
+	infoStyle := styles.Info
 
 	fmt.Println()
 	fmt.Println(titleStyle.Render("🐙 Octo Docker Diagnostics"))
@@ -327,11 +327,12 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 }
 
 func printDiagnosticSummary(results []DiagnosticResult, verbose bool) {
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("69"))
-	okStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	// Styles (defined in internal/ui/styles/theme.go)
+	titleStyle := styles.Title
+	okStyle := styles.Success
+	warnStyle := styles.Warning
+	errorStyle := styles.Error
+	infoStyle := styles.Info
 
 	fmt.Println()
 	fmt.Println(strings.Repeat("─", 50))

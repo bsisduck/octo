@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/bsisduck/octo/internal/ui/styles"
 	"github.com/spf13/cobra"
 )
 
@@ -45,6 +46,12 @@ Run 'octo' without arguments to launch the interactive menu.`, octoLogo, octoTag
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Launch interactive menu when no subcommand is provided
 		return runInteractiveMenu()
+	},
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if noColor || os.Getenv("NO_COLOR") != "" {
+			styles.DisableColors()
+		}
+		return nil
 	},
 	SilenceUsage:  true,
 	SilenceErrors: true,

@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/bsisduck/octo/internal/docker"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/bsisduck/octo/internal/ui/styles"
 	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 )
@@ -48,12 +48,12 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 	// If no specific flag, clean all
 	cleanAll := !containersOnly && !imagesOnly && !volumesOnly && !networksOnly && !buildCacheOnly
 
-	// Styles
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("69"))
-	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42"))
-	successStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	// Styles (defined in internal/ui/styles/theme.go)
+	titleStyle := styles.Title
+	sectionStyle := styles.Section
+	successStyle := styles.Success
+	warnStyle := styles.Warning
+	infoStyle := styles.Info
 
 	fmt.Println()
 	fmt.Println(titleStyle.Render("🐙 Octo Cleanup"))

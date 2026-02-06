@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/bsisduck/octo/internal/docker"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/bsisduck/octo/internal/ui/styles"
 	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 )
@@ -39,18 +39,18 @@ func runPrune(cmd *cobra.Command, args []string) error {
 	pruneVolumes, _ := cmd.Flags().GetBool("volumes")
 	all, _ := cmd.Flags().GetBool("all")
 
-	// Styles
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("69"))
-	warnStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196"))
-	successStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	// Styles (defined in internal/ui/styles/theme.go)
+	titleStyle := styles.Title
+	warnStyle := styles.Warn
+	successStyle := styles.Success
+	infoStyle := styles.Info
 
 	fmt.Println()
 	fmt.Println(titleStyle.Render("🐙 Octo Deep Prune"))
 	fmt.Println(strings.Repeat("─", 50))
 
 	if IsDryRun() {
-		fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render("DRY RUN MODE - No changes will be made"))
+		fmt.Println(styles.Warning.Render("DRY RUN MODE - No changes will be made"))
 		fmt.Println()
 	}
 

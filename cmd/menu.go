@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/bsisduck/octo/internal/docker"
+	"github.com/bsisduck/octo/internal/ui/styles"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
 )
 
@@ -179,47 +179,18 @@ func (m menuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m menuModel) View() string {
-	// Styles
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("69")).
-		MarginBottom(1)
-
-	logoStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("69"))
-
-	taglineStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Italic(true)
-
-	selectedStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("255")).
-		Background(lipgloss.Color("62")).
-		Bold(true).
-		Padding(0, 1)
-
-	normalStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("252")).
-		Padding(0, 1)
-
-	subtitleStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241"))
-
-	infoStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241"))
-
-	errorStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("196"))
-
-	statLabelStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Width(12)
-
-	statValueStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("42"))
-
-	helpStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241"))
+	// Styles (defined in internal/ui/styles/theme.go)
+	titleStyle := styles.TitleWithMargin
+	logoStyle := styles.Logo
+	taglineStyle := styles.Tagline
+	selectedStyle := styles.Selected
+	normalStyle := styles.Normal
+	subtitleStyle := styles.Subtitle
+	infoStyle := styles.Info
+	errorStyle := styles.Error
+	statLabelStyle := styles.StatLabel
+	statValueStyle := styles.StatValue
+	helpStyle := styles.Help
 
 	var b strings.Builder
 
@@ -261,7 +232,7 @@ func (m menuModel) View() string {
 		if m.diskUsage.TotalReclaimable > 0 {
 			b.WriteString(fmt.Sprintf("  %s %s\n",
 				statLabelStyle.Render("Reclaimable:"),
-				lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render(
+				styles.Warning.Render(
 					humanize.Bytes(uint64(m.diskUsage.TotalReclaimable)))))
 		}
 		b.WriteString("\n")

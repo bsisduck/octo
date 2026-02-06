@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/bsisduck/octo/internal/docker"
+	"github.com/bsisduck/octo/internal/ui/styles"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 )
@@ -419,14 +419,14 @@ func (m analyzeModel) View() string {
 		return "Loading Docker resources..."
 	}
 
-	// Styles
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("69"))
-	categoryStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42")).PaddingLeft(1)
-	selectedStyle := lipgloss.NewStyle().Background(lipgloss.Color("237")).Foreground(lipgloss.Color("255"))
-	normalStyle := lipgloss.NewStyle().PaddingLeft(3)
-	unusedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	sizeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Width(10).Align(lipgloss.Right)
-	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	// Styles (defined in internal/ui/styles/theme.go)
+	titleStyle := styles.Title
+	categoryStyle := styles.Category
+	selectedStyle := styles.SelectedAnalyze
+	normalStyle := styles.NormalAnalyze
+	unusedStyle := styles.Unused
+	sizeStyle := styles.Size
+	helpStyle := styles.Help
 
 	var b strings.Builder
 
@@ -442,7 +442,7 @@ func (m analyzeModel) View() string {
 
 	// Delete confirmation
 	if m.deleteConfirm && m.deleteTarget != nil {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true).Render(
+		b.WriteString(styles.DeleteConfirm.Render(
 			fmt.Sprintf("Delete %s '%s'? (y/n)", m.deleteTarget.Type.String(), m.deleteTarget.Name)))
 		b.WriteString("\n\n")
 	}

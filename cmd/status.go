@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/bsisduck/octo/internal/docker"
+	"github.com/bsisduck/octo/internal/ui/styles"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 )
@@ -64,12 +64,12 @@ func printStatusOnce() error {
 		return fmt.Errorf("error getting disk usage: %w", err)
 	}
 
-	// Styles
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("69"))
-	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	valueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
-	highlightStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	warnStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	// Styles (defined in internal/ui/styles/theme.go)
+	titleStyle := styles.Title
+	labelStyle := styles.Label
+	valueStyle := styles.Value
+	highlightStyle := styles.Success
+	warnStyle := styles.Warning
 
 	fmt.Println()
 	fmt.Println(titleStyle.Render("Docker System Status"))
@@ -225,13 +225,13 @@ func (m statusModel) View() string {
 		return fmt.Sprintf("Error: %v\nPress 'q' to quit.", m.err)
 	}
 
-	// Styles
-	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("69")).MarginBottom(1)
-	sectionStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42"))
-	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Width(14)
-	valueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
-	runningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	stoppedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	// Styles (defined in internal/ui/styles/theme.go)
+	titleStyle := styles.TitleWithMargin
+	sectionStyle := styles.Section
+	labelStyle := styles.LabelWithWidth
+	valueStyle := styles.Value
+	runningStyle := styles.Running
+	stoppedStyle := styles.Stopped
 
 	var b strings.Builder
 
@@ -304,7 +304,7 @@ func (m statusModel) View() string {
 	b.WriteString("\n")
 	b.WriteString(strings.Repeat("─", 50))
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(
+	b.WriteString(styles.Help.Render(
 		fmt.Sprintf("Last updated: %s | Press 'r' to refresh, 'q' to quit", m.lastUpdated.Format("15:04:05"))))
 
 	return b.String()
