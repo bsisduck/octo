@@ -19,27 +19,35 @@ func NewInteractiveMenu() *InteractiveMenu {
 	return &InteractiveMenu{}
 }
 
-// Run starts the interactive menu
-func (m *InteractiveMenu) Run() error {
+// Run starts the interactive menu and returns the chosen action.
+// Returns an empty string if the user quit without selecting.
+func (m *InteractiveMenu) Run() (string, error) {
 	p := tea.NewProgram(newMenuModel(), tea.WithAltScreen())
 	m.program = p
-	_, err := p.Run()
-	return err
+	finalModel, err := p.Run()
+	if err != nil {
+		return "", err
+	}
+	if mdl, ok := finalModel.(menuModel); ok && mdl.chosenAction != "" {
+		return mdl.chosenAction, nil
+	}
+	return "", nil
 }
 
 // Menu model
 type menuModel struct {
-	selected   int
-	items      []menuItem
-	width      int
-	height     int
-	err        error
-	dockerOK   bool
-	diskUsage  *DiskUsageInfo
-	containers int
-	running    int
-	images     int
-	volumes    int
+	selected     int
+	chosenAction string // set only when user selects an action (Enter or number key)
+	items        []menuItem
+	width        int
+	height       int
+	err          error
+	dockerOK     bool
+	diskUsage    *DiskUsageInfo
+	containers   int
+	running      int
+	images       int
+	volumes      int
 }
 
 type menuItem struct {
@@ -117,25 +125,32 @@ func (m menuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selected++
 			}
 		case "enter", " ":
-			return m, m.executeAction()
+			if m.selected >= 0 && m.selected < len(m.items) {
+				m.chosenAction = m.items[m.selected].action
+			}
+			return m, tea.Quit
 		case "1":
 			m.selected = 0
-			return m, m.executeAction()
+			m.chosenAction = m.items[0].action
+			return m, tea.Quit
 		case "2":
 			m.selected = 1
-			return m, m.executeAction()
+			m.chosenAction = m.items[1].action
+			return m, tea.Quit
 		case "3":
 			m.selected = 2
-			return m, m.executeAction()
+			m.chosenAction = m.items[2].action
+			return m, tea.Quit
 		case "4":
 			m.selected = 3
-			return m, m.executeAction()
+			m.chosenAction = m.items[3].action
+			return m, tea.Quit
 		case "5":
 			m.selected = 4
-			return m, m.executeAction()
+			m.chosenAction = m.items[4].action
+			return m, tea.Quit
 		case "v":
-			// Version
-			runVersion(nil, nil)
+			m.chosenAction = "version"
 			return m, tea.Quit
 		case "?", "h":
 			// Help - just quit and show help
@@ -157,13 +172,6 @@ func (m menuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
-}
-
-func (m menuModel) executeAction() tea.Cmd {
-	return func() tea.Msg {
-		// Exit the TUI first, then command will be executed based on selection
-		return tea.Quit()
-	}
 }
 
 func (m menuModel) View() string {

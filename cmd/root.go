@@ -71,11 +71,35 @@ func init() {
 }
 
 // runInteractiveMenu launches the TUI-based interactive menu
+// and dispatches the selected command after the TUI exits.
 func runInteractiveMenu() {
 	menu := NewInteractiveMenu()
-	if err := menu.Run(); err != nil {
+	action, err := menu.Run()
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
+	}
+
+	if action == "" {
+		return // user quit without selecting (q/esc/ctrl+c)
+	}
+
+	// Dispatch to the appropriate command
+	switch action {
+	case "status":
+		statusCmd.Run(statusCmd, nil)
+	case "analyze":
+		analyzeCmd.Run(analyzeCmd, nil)
+	case "cleanup":
+		cleanupCmd.Run(cleanupCmd, nil)
+	case "prune":
+		pruneCmd.Run(pruneCmd, nil)
+	case "diagnose":
+		diagnoseCmd.Run(diagnoseCmd, nil)
+	case "version":
+		versionCmd.Run(versionCmd, nil)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown action: %s\n", action)
 	}
 }
 
