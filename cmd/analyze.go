@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -23,7 +22,7 @@ var analyzeCmd = &cobra.Command{
 - View size breakdown and usage patterns
 - Identify large or unused resources
 - Navigate with arrow keys, delete with 'd'`,
-	Run: runAnalyze,
+	RunE: runAnalyze,
 }
 
 func init() {
@@ -31,15 +30,15 @@ func init() {
 	analyzeCmd.Flags().BoolP("dangling", "d", false, "Show only dangling/unused resources")
 }
 
-func runAnalyze(cmd *cobra.Command, args []string) {
+func runAnalyze(cmd *cobra.Command, args []string) error {
 	resourceType, _ := cmd.Flags().GetString("type")
 	dangling, _ := cmd.Flags().GetBool("dangling")
 
 	p := tea.NewProgram(newAnalyzeModel(resourceType, dangling), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("running analyze: %w", err)
 	}
+	return nil
 }
 
 // Resource types for the analyzer

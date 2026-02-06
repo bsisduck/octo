@@ -23,7 +23,7 @@ var cleanupCmd = &cobra.Command{
 - Clear build cache
 
 Use --dry-run to preview what would be removed without making changes.`,
-	Run: runCleanup,
+	RunE: runCleanup,
 }
 
 func init() {
@@ -36,7 +36,7 @@ func init() {
 	cleanupCmd.Flags().BoolP("force", "f", false, "Don't prompt for confirmation")
 }
 
-func runCleanup(cmd *cobra.Command, args []string) {
+func runCleanup(cmd *cobra.Command, args []string) error {
 	all, _ := cmd.Flags().GetBool("all")
 	containersOnly, _ := cmd.Flags().GetBool("containers")
 	imagesOnly, _ := cmd.Flags().GetBool("images")
@@ -256,6 +256,7 @@ func runCleanup(cmd *cobra.Command, args []string) {
 		fmt.Println(infoStyle.Render("No space reclaimed"))
 	}
 	fmt.Println()
+	return nil
 }
 
 func confirmAction(prompt string) bool {

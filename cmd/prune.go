@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/bsisduck/octo/internal/docker"
@@ -26,7 +25,7 @@ WARNING: This will remove:
 - All anonymous volumes not used by at least one container
 
 Use --dry-run to preview what would be removed.`,
-	Run: runPrune,
+	RunE: runPrune,
 }
 
 func init() {
@@ -35,7 +34,7 @@ func init() {
 	pruneCmd.Flags().BoolP("all", "a", false, "Remove all unused images, not just dangling")
 }
 
-func runPrune(cmd *cobra.Command, args []string) {
+func runPrune(cmd *cobra.Command, args []string) error {
 	force, _ := cmd.Flags().GetBool("force")
 	pruneVolumes, _ := cmd.Flags().GetBool("volumes")
 	all, _ := cmd.Flags().GetBool("all")
@@ -57,8 +56,7 @@ func runPrune(cmd *cobra.Command, args []string) {
 
 	client, err := docker.NewClient()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error connecting to Docker: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("error connecting to Docker: %w", err)
 	}
 	defer client.Close()
 
@@ -67,8 +65,7 @@ func runPrune(cmd *cobra.Command, args []string) {
 	// Get disk usage before
 	usageBefore, err := client.GetDiskUsage(ctx)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting disk usage: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("error getting disk usage: %w", err)
 	}
 
 	fmt.Println()
@@ -84,7 +81,7 @@ func runPrune(cmd *cobra.Command, args []string) {
 	if usageBefore.TotalReclaimable == 0 {
 		fmt.Println(infoStyle.Render("No unused resources to clean up."))
 		fmt.Println()
-		return
+		return nil
 	}
 
 	// Warning message
@@ -106,7 +103,7 @@ func runPrune(cmd *cobra.Command, args []string) {
 		fmt.Println(infoStyle.Render(fmt.Sprintf("Would reclaim approximately: %s",
 			humanize.Bytes(uint64(usageBefore.TotalReclaimable)))))
 		fmt.Println()
-		return
+		return nil
 	}
 
 	// Confirmation
@@ -118,7 +115,7 @@ func runPrune(cmd *cobra.Command, args []string) {
 			fmt.Println()
 			fmt.Println(infoStyle.Render("Operation canceled."))
 			fmt.Println()
-			return
+			return nil
 		}
 	}
 
@@ -184,4 +181,5 @@ func runPrune(cmd *cobra.Command, args []string) {
 	fmt.Println(strings.Repeat("─", 50))
 	fmt.Println(successStyle.Render(fmt.Sprintf("Total space reclaimed: %s", humanize.Bytes(totalReclaimed))))
 	fmt.Println()
+	return nil
 }

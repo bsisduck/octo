@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -23,34 +22,33 @@ var statusCmd = &cobra.Command{
 - Volume usage
 - Network status
 - System resource consumption`,
-	Run: runStatus,
+	RunE: runStatus,
 }
 
 func init() {
 	statusCmd.Flags().BoolP("watch", "w", false, "Continuously update status")
 }
 
-func runStatus(cmd *cobra.Command, args []string) {
+func runStatus(cmd *cobra.Command, args []string) error {
 	watch, _ := cmd.Flags().GetBool("watch")
 
 	if watch {
 		// Launch TUI for continuous monitoring
 		p := tea.NewProgram(newStatusModel(), tea.WithAltScreen())
 		if _, err := p.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("running status: %w", err)
 		}
 	} else {
 		// One-shot status display
-		printStatusOnce()
+		return printStatusOnce()
 	}
+	return nil
 }
 
-func printStatusOnce() {
+func printStatusOnce() error {
 	client, err := docker.NewClient()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error connecting to Docker: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("error connecting to Docker: %w", err)
 	}
 	defer client.Close()
 
@@ -58,14 +56,12 @@ func printStatusOnce() {
 
 	info, err := client.GetServerInfo(ctx)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting Docker info: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("error getting Docker info: %w", err)
 	}
 
 	diskUsage, err := client.GetDiskUsage(ctx)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting disk usage: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("error getting disk usage: %w", err)
 	}
 
 	// Styles
@@ -113,6 +109,7 @@ func printStatusOnce() {
 	fmt.Printf("  %s %s\n", labelStyle.Render("Reclaimable:"), highlightStyle.Render(humanize.Bytes(uint64(diskUsage.TotalReclaimable))))
 	fmt.Printf("  %s %s\n", labelStyle.Render("Build Cache:"), valueStyle.Render(humanize.Bytes(uint64(diskUsage.BuildCache))))
 	fmt.Println()
+	return nil
 }
 
 // TUI Model for continuous status monitoring

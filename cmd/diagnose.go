@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"runtime"
 	"strings"
 	"time"
@@ -23,7 +22,7 @@ var diagnoseCmd = &cobra.Command{
 - Resource usage
 - Potential issues
 - Performance recommendations`,
-	Run: runDiagnose,
+	RunE: runDiagnose,
 }
 
 func init() {
@@ -37,7 +36,7 @@ type DiagnosticResult struct {
 	Details string
 }
 
-func runDiagnose(cmd *cobra.Command, args []string) {
+func runDiagnose(cmd *cobra.Command, args []string) error {
 	verbose, _ := cmd.Flags().GetBool("verbose")
 
 	// Styles
@@ -67,7 +66,7 @@ func runDiagnose(cmd *cobra.Command, args []string) {
 			Details: err.Error(),
 		})
 		printDiagnosticSummary(results, verbose)
-		os.Exit(1)
+		return fmt.Errorf("docker connection failed: %w", err)
 	}
 	fmt.Println(okStyle.Render("OK"))
 	results = append(results, DiagnosticResult{
@@ -324,6 +323,7 @@ func runDiagnose(cmd *cobra.Command, args []string) {
 
 	// Print summary
 	printDiagnosticSummary(results, verbose)
+	return nil
 }
 
 func printDiagnosticSummary(results []DiagnosticResult, verbose bool) {

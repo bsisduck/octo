@@ -42,9 +42,9 @@ Octo helps you manage Docker containers, images, volumes, and networks
 with an intuitive interface and powerful cleanup capabilities.
 
 Run 'octo' without arguments to launch the interactive menu.`, octoLogo, octoTagline),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		// Launch interactive menu when no subcommand is provided
-		runInteractiveMenu()
+		return runInteractiveMenu()
 	},
 	SilenceUsage:  true,
 	SilenceErrors: true,
@@ -72,34 +72,34 @@ func init() {
 
 // runInteractiveMenu launches the TUI-based interactive menu
 // and dispatches the selected command after the TUI exits.
-func runInteractiveMenu() {
+func runInteractiveMenu() error {
 	menu := NewInteractiveMenu()
 	action, err := menu.Run()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("menu error: %w", err)
 	}
 
 	if action == "" {
-		return // user quit without selecting (q/esc/ctrl+c)
+		return nil // user quit without selecting (q/esc/ctrl+c)
 	}
 
 	// Dispatch to the appropriate command
 	switch action {
 	case "status":
-		statusCmd.Run(statusCmd, nil)
+		return statusCmd.RunE(statusCmd, nil)
 	case "analyze":
-		analyzeCmd.Run(analyzeCmd, nil)
+		return analyzeCmd.RunE(analyzeCmd, nil)
 	case "cleanup":
-		cleanupCmd.Run(cleanupCmd, nil)
+		return cleanupCmd.RunE(cleanupCmd, nil)
 	case "prune":
-		pruneCmd.Run(pruneCmd, nil)
+		return pruneCmd.RunE(pruneCmd, nil)
 	case "diagnose":
-		diagnoseCmd.Run(diagnoseCmd, nil)
+		return diagnoseCmd.RunE(diagnoseCmd, nil)
 	case "version":
-		versionCmd.Run(versionCmd, nil)
+		versionCmd.Run(versionCmd, nil) // version is safe/simple, kept as Run for now or update later
+		return nil
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown action: %s\n", action)
+		return fmt.Errorf("unknown action: %s", action)
 	}
 }
 
