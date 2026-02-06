@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/bsisduck/octo/internal/docker"
@@ -66,8 +65,7 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 
 	client, err := docker.NewClient()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error connecting to Docker: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("connecting to Docker: %w", err)
 	}
 	defer client.Close()
 
