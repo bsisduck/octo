@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bsisduck/octo/internal/docker"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
@@ -52,10 +53,11 @@ func runDiagnose(cmd *cobra.Command, args []string) {
 	fmt.Println()
 
 	results := []DiagnosticResult{}
+	ctx := context.Background()
 
 	// Check 1: Docker connection
 	fmt.Print("Checking Docker connection... ")
-	client, err := NewDockerClient()
+	client, err := docker.NewClient()
 	if err != nil {
 		fmt.Println(errorStyle.Render("FAILED"))
 		results = append(results, DiagnosticResult{
@@ -77,7 +79,7 @@ func runDiagnose(cmd *cobra.Command, args []string) {
 
 	// Check 2: Docker version
 	fmt.Print("Checking Docker version... ")
-	info, err := client.GetServerInfo()
+	info, err := client.GetServerInfo(ctx)
 	if err != nil {
 		fmt.Println(errorStyle.Render("FAILED"))
 		results = append(results, DiagnosticResult{
@@ -92,7 +94,7 @@ func runDiagnose(cmd *cobra.Command, args []string) {
 			Name:    "Docker Version",
 			Status:  "ok",
 			Message: fmt.Sprintf("Docker %s", info.ServerVersion),
-			Details: fmt.Sprintf("API: %s, OS: %s, Arch: %s", client.Client.ClientVersion(), info.OperatingSystem, info.Architecture),
+			Details: fmt.Sprintf("OS: %s, Arch: %s", info.OperatingSystem, info.Architecture),
 		})
 	}
 
@@ -137,7 +139,7 @@ func runDiagnose(cmd *cobra.Command, args []string) {
 
 	// Check 5: Disk space
 	fmt.Print("Checking disk usage... ")
-	diskUsage, err := client.GetDiskUsage()
+	diskUsage, err := client.GetDiskUsage(ctx)
 	if err != nil {
 		fmt.Println(errorStyle.Render("FAILED"))
 		results = append(results, DiagnosticResult{
@@ -171,7 +173,7 @@ func runDiagnose(cmd *cobra.Command, args []string) {
 
 	// Check 6: Container count
 	fmt.Print("Checking containers... ")
-	containers, err := client.ListContainers(true)
+	containers, err := client.ListContainers(ctx, true)
 	if err != nil {
 		fmt.Println(errorStyle.Render("FAILED"))
 	} else {
@@ -205,7 +207,7 @@ func runDiagnose(cmd *cobra.Command, args []string) {
 
 	// Check 7: Dangling images
 	fmt.Print("Checking dangling images... ")
-	danglingImages, err := client.GetDanglingImages()
+	danglingImages, err := client.GetDanglingImages(ctx)
 	if err != nil {
 		fmt.Println(errorStyle.Render("FAILED"))
 	} else {
@@ -233,7 +235,7 @@ func runDiagnose(cmd *cobra.Command, args []string) {
 
 	// Check 8: Unused volumes
 	fmt.Print("Checking unused volumes... ")
-	unusedVolumes, err := client.GetUnusedVolumes()
+	unusedVolumes, err := client.GetUnusedVolumes(ctx)
 	if err != nil {
 		fmt.Println(errorStyle.Render("FAILED"))
 	} else {
@@ -258,9 +260,9 @@ func runDiagnose(cmd *cobra.Command, args []string) {
 	// Check 9: API response time
 	fmt.Print("Checking API responsiveness... ")
 	start := time.Now()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	_, err = client.Client.Ping(ctx)
-	cancel()
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	err = client.Ping(pingCtx)
+	pingCancel()
 	elapsed := time.Since(start)
 	if err != nil {
 		fmt.Println(errorStyle.Render("TIMEOUT"))

@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/bsisduck/octo/internal/docker"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
@@ -45,20 +47,22 @@ func runStatus(cmd *cobra.Command, args []string) {
 }
 
 func printStatusOnce() {
-	client, err := NewDockerClient()
+	client, err := docker.NewClient()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error connecting to Docker: %v\n", err)
 		os.Exit(1)
 	}
 	defer client.Close()
 
-	info, err := client.GetServerInfo()
+	ctx := context.Background()
+
+	info, err := client.GetServerInfo(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting Docker info: %v\n", err)
 		os.Exit(1)
 	}
 
-	diskUsage, err := client.GetDiskUsage()
+	diskUsage, err := client.GetDiskUsage(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting disk usage: %v\n", err)
 		os.Exit(1)
@@ -77,7 +81,6 @@ func printStatusOnce() {
 
 	// Server info
 	fmt.Printf("%s %s\n", labelStyle.Render("Server Version:"), valueStyle.Render(info.ServerVersion))
-	fmt.Printf("%s %s\n", labelStyle.Render("API Version:"), valueStyle.Render(client.Client.ClientVersion()))
 	fmt.Printf("%s %s (%s)\n", labelStyle.Render("OS/Arch:"), valueStyle.Render(info.OperatingSystem), info.Architecture)
 	fmt.Println()
 
@@ -97,8 +100,8 @@ func printStatusOnce() {
 
 	// Volumes
 	fmt.Println(titleStyle.Render("Volumes"))
-	volumes, _ := client.ListVolumes()
-	unusedVolumes, _ := client.GetUnusedVolumes()
+	volumes, _ := client.ListVolumes(ctx)
+	unusedVolumes, _ := client.GetUnusedVolumes(ctx)
 	fmt.Printf("  %s %s\n", labelStyle.Render("Total:"), valueStyle.Render(fmt.Sprintf("%d", len(volumes))))
 	fmt.Printf("  %s %s\n", labelStyle.Render("Unused:"), warnStyle.Render(fmt.Sprintf("%d", len(unusedVolumes))))
 	fmt.Printf("  %s %s\n", labelStyle.Render("Size:"), valueStyle.Render(humanize.Bytes(uint64(diskUsage.Volumes))))
@@ -114,36 +117,34 @@ func printStatusOnce() {
 
 // TUI Model for continuous status monitoring
 type statusModel struct {
-	client      *DockerClient
+	client      docker.DockerService
 	lastUpdated time.Time
 	err         error
 	width       int
 	height      int
 
 	// Cached data
-	containers    []ContainerInfo
-	images        []ImageInfo
-	volumes       []VolumeInfo
-	diskUsage     *DiskUsageInfo
+	containers    []docker.ContainerInfo
+	images        []docker.ImageInfo
+	volumes       []docker.VolumeInfo
+	diskUsage     *docker.DiskUsageInfo
 	serverVersion string
-	apiVersion    string
 	osInfo        string
 }
 
 type statusTickMsg time.Time
 type statusDataMsg struct {
-	containers    []ContainerInfo
-	images        []ImageInfo
-	volumes       []VolumeInfo
-	diskUsage     *DiskUsageInfo
+	containers    []docker.ContainerInfo
+	images        []docker.ImageInfo
+	volumes       []docker.VolumeInfo
+	diskUsage     *docker.DiskUsageInfo
 	serverVersion string
-	apiVersion    string
 	osInfo        string
 	err           error
 }
 
 func newStatusModel() statusModel {
-	client, err := NewDockerClient()
+	client, err := docker.NewClient()
 	return statusModel{
 		client: client,
 		err:    err,
@@ -169,12 +170,14 @@ func (m statusModel) fetchData() tea.Cmd {
 			return statusDataMsg{err: fmt.Errorf("no Docker client")}
 		}
 
-		containers, _ := m.client.ListContainers(true)
-		images, _ := m.client.ListImages(true)
-		volumes, _ := m.client.ListVolumes()
-		diskUsage, _ := m.client.GetDiskUsage()
+		ctx := context.Background()
 
-		info, _ := m.client.GetServerInfo()
+		containers, _ := m.client.ListContainers(ctx, true)
+		images, _ := m.client.ListImages(ctx, true)
+		volumes, _ := m.client.ListVolumes(ctx)
+		diskUsage, _ := m.client.GetDiskUsage(ctx)
+
+		info, _ := m.client.GetServerInfo(ctx)
 
 		return statusDataMsg{
 			containers:    containers,
@@ -182,7 +185,6 @@ func (m statusModel) fetchData() tea.Cmd {
 			volumes:       volumes,
 			diskUsage:     diskUsage,
 			serverVersion: info.ServerVersion,
-			apiVersion:    m.client.Client.ClientVersion(),
 			osInfo:        fmt.Sprintf("%s (%s)", info.OperatingSystem, info.Architecture),
 		}
 	}
@@ -214,7 +216,6 @@ func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.volumes = msg.volumes
 			m.diskUsage = msg.diskUsage
 			m.serverVersion = msg.serverVersion
-			m.apiVersion = msg.apiVersion
 			m.osInfo = msg.osInfo
 			m.lastUpdated = time.Now()
 		}
@@ -240,7 +241,7 @@ func (m statusModel) View() string {
 	// Header
 	b.WriteString(titleStyle.Render("🐙 Octo Docker Status"))
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("Server: %s | API: %s | %s\n", m.serverVersion, m.apiVersion, m.osInfo))
+	b.WriteString(fmt.Sprintf("Server: %s | %s\n", m.serverVersion, m.osInfo))
 	b.WriteString(strings.Repeat("─", 50))
 	b.WriteString("\n\n")
 

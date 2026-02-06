@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"runtime"
 
+	"github.com/bsisduck/octo/internal/docker"
 	"github.com/spf13/cobra"
 )
 
@@ -27,21 +29,21 @@ func runVersion(cmd *cobra.Command, args []string) {
 	}
 
 	// Check Docker connection
-	client, err := NewDockerClient()
+	client, err := docker.NewClient()
 	if err != nil {
 		fmt.Printf("Docker: Not connected (%v)\n", err)
 		return
 	}
 	defer client.Close()
 
-	info, err := client.GetServerInfo()
+	ctx := context.Background()
+	info, err := client.GetServerInfo(ctx)
 	if err != nil {
 		fmt.Printf("Docker: Error getting info (%v)\n", err)
 		return
 	}
 
 	fmt.Printf("Docker version: %s\n", info.ServerVersion)
-	fmt.Printf("Docker API: %s\n", client.Client.ClientVersion())
 	fmt.Printf("Docker OS: %s\n", info.OperatingSystem)
 	fmt.Printf("Docker Arch: %s\n", info.Architecture)
 	fmt.Printf("Containers: %d (running: %d)\n", info.Containers, info.ContainersRunning)

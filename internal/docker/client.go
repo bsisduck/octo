@@ -1,11 +1,9 @@
-package cmd
+package docker
 
 import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -19,68 +17,18 @@ import (
 	"github.com/docker/docker/client"
 )
 
-// DockerClient wraps the Docker SDK client with helper methods
-type DockerClient struct {
-	Client *client.Client
-	ctx    context.Context
+// Compile-time interface check
+var _ DockerService = (*Client)(nil)
+
+// Client wraps the Docker SDK client with helper methods.
+// It uses the DockerAPI interface internally for testability.
+type Client struct {
+	api DockerAPI
 }
 
-// ContainerInfo holds container details for display
-type ContainerInfo struct {
-	ID      string
-	Name    string
-	Image   string
-	Status  string
-	State   string
-	Created time.Time
-	Ports   string
-	Size    int64
-}
-
-// ImageInfo holds image details for display
-type ImageInfo struct {
-	ID         string
-	Repository string
-	Tag        string
-	Size       int64
-	Created    time.Time
-	Containers int
-	Dangling   bool
-}
-
-// VolumeInfo holds volume details for display
-type VolumeInfo struct {
-	Name       string
-	Driver     string
-	Mountpoint string
-	Size       int64
-	Created    time.Time
-	Labels     map[string]string
-	InUse      bool
-}
-
-// NetworkInfo holds network details for display
-type NetworkInfo struct {
-	ID         string
-	Name       string
-	Driver     string
-	Scope      string
-	Internal   bool
-	Containers int
-}
-
-// DiskUsageInfo holds Docker disk usage summary
-type DiskUsageInfo struct {
-	Images           int64
-	Containers       int64
-	Volumes          int64
-	BuildCache       int64
-	TotalReclaimable int64
-	Total            int64
-}
-
-// NewDockerClient creates a new Docker client with automatic socket detection
-func NewDockerClient() (*DockerClient, error) {
+// NewClient creates a new Docker client with automatic socket detection.
+// It returns a Client implementing the DockerService interface.
+func NewClient() (*Client, error) {
 	// Try environment variable first
 	host := os.Getenv("DOCKER_HOST")
 
@@ -112,58 +60,28 @@ func NewDockerClient() (*DockerClient, error) {
 		return nil, fmt.Errorf("failed to connect to Docker daemon: %w", err)
 	}
 
-	return &DockerClient{
-		Client: cli,
-		ctx:    ctx,
-	}, nil
+	return &Client{api: cli}, nil
 }
 
-// detectDockerSocket returns the Docker socket path based on platform
-func detectDockerSocket() string {
-	switch runtime.GOOS {
-	case "darwin":
-		// macOS: Check Docker Desktop locations
-		paths := []string{
-			filepath.Join(os.Getenv("HOME"), ".docker/run/docker.sock"),
-			filepath.Join(os.Getenv("HOME"), "Library/Containers/com.docker.docker/Data/docker.sock"),
-			"/var/run/docker.sock",
-		}
-		for _, p := range paths {
-			if _, err := os.Stat(p); err == nil {
-				return "unix://" + p
-			}
-		}
-	case "linux":
-		// Linux: Standard locations
-		paths := []string{
-			"/var/run/docker.sock",
-			"/run/docker.sock",
-			filepath.Join(os.Getenv("XDG_RUNTIME_DIR"), "docker.sock"), // Rootless
-		}
-		for _, p := range paths {
-			if _, err := os.Stat(p); err == nil {
-				return "unix://" + p
-			}
-		}
-	case "windows":
-		return "npipe:////./pipe/docker_engine"
-	}
-	return ""
+// Ping returns nil if the Docker daemon is reachable.
+func (c *Client) Ping(ctx context.Context) error {
+	_, err := c.api.Ping(ctx)
+	return err
 }
 
-// Close closes the Docker client connection
-func (dc *DockerClient) Close() error {
-	return dc.Client.Close()
+// Close closes the Docker client connection.
+func (c *Client) Close() error {
+	return c.api.Close()
 }
 
-// GetServerInfo returns Docker daemon information
-func (dc *DockerClient) GetServerInfo() (system.Info, error) {
-	return dc.Client.Info(dc.ctx)
+// GetServerInfo returns Docker daemon information.
+func (c *Client) GetServerInfo(ctx context.Context) (system.Info, error) {
+	return c.api.Info(ctx)
 }
 
-// ListContainers returns all containers (running and stopped)
-func (dc *DockerClient) ListContainers(all bool) ([]ContainerInfo, error) {
-	containers, err := dc.Client.ContainerList(dc.ctx, container.ListOptions{All: all})
+// ListContainers returns all containers (running and stopped).
+func (c *Client) ListContainers(ctx context.Context, all bool) ([]ContainerInfo, error) {
+	containers, err := c.api.ContainerList(ctx, container.ListOptions{All: all})
 	if err != nil {
 		return nil, err
 	}
@@ -195,9 +113,9 @@ func (dc *DockerClient) ListContainers(all bool) ([]ContainerInfo, error) {
 	return result, nil
 }
 
-// ListImages returns all images
-func (dc *DockerClient) ListImages(all bool) ([]ImageInfo, error) {
-	images, err := dc.Client.ImageList(dc.ctx, image.ListOptions{All: all})
+// ListImages returns all images.
+func (c *Client) ListImages(ctx context.Context, all bool) ([]ImageInfo, error) {
+	images, err := c.api.ImageList(ctx, image.ListOptions{All: all})
 	if err != nil {
 		return nil, err
 	}
@@ -231,18 +149,18 @@ func (dc *DockerClient) ListImages(all bool) ([]ImageInfo, error) {
 	return result, nil
 }
 
-// ListVolumes returns all volumes
-func (dc *DockerClient) ListVolumes() ([]VolumeInfo, error) {
-	volumes, err := dc.Client.VolumeList(dc.ctx, volume.ListOptions{})
+// ListVolumes returns all volumes.
+func (c *Client) ListVolumes(ctx context.Context) ([]VolumeInfo, error) {
+	volumes, err := c.api.VolumeList(ctx, volume.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
 
 	// Get containers to check volume usage
-	containers, _ := dc.Client.ContainerList(dc.ctx, container.ListOptions{All: true})
+	containers, _ := c.api.ContainerList(ctx, container.ListOptions{All: true})
 	usedVolumes := make(map[string]bool)
-	for _, c := range containers {
-		for _, m := range c.Mounts {
+	for _, ct := range containers {
+		for _, m := range ct.Mounts {
 			if m.Type == "volume" {
 				usedVolumes[m.Name] = true
 			}
@@ -265,9 +183,9 @@ func (dc *DockerClient) ListVolumes() ([]VolumeInfo, error) {
 	return result, nil
 }
 
-// ListNetworks returns all networks
-func (dc *DockerClient) ListNetworks() ([]NetworkInfo, error) {
-	networks, err := dc.Client.NetworkList(dc.ctx, network.ListOptions{})
+// ListNetworks returns all networks.
+func (c *Client) ListNetworks(ctx context.Context) ([]NetworkInfo, error) {
+	networks, err := c.api.NetworkList(ctx, network.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -287,9 +205,9 @@ func (dc *DockerClient) ListNetworks() ([]NetworkInfo, error) {
 	return result, nil
 }
 
-// GetDiskUsage returns Docker disk usage information
-func (dc *DockerClient) GetDiskUsage() (*DiskUsageInfo, error) {
-	du, err := dc.Client.DiskUsage(dc.ctx, types.DiskUsageOptions{})
+// GetDiskUsage returns Docker disk usage information.
+func (c *Client) GetDiskUsage(ctx context.Context) (*DiskUsageInfo, error) {
+	du, err := c.api.DiskUsage(ctx, types.DiskUsageOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -305,10 +223,10 @@ func (dc *DockerClient) GetDiskUsage() (*DiskUsageInfo, error) {
 	}
 
 	// Calculate container sizes
-	for _, c := range du.Containers {
-		info.Containers += c.SizeRw
-		if c.State != "running" {
-			info.TotalReclaimable += c.SizeRw
+	for _, ct := range du.Containers {
+		info.Containers += ct.SizeRw
+		if ct.State != "running" {
+			info.TotalReclaimable += ct.SizeRw
 		}
 	}
 
@@ -330,12 +248,12 @@ func (dc *DockerClient) GetDiskUsage() (*DiskUsageInfo, error) {
 	return info, nil
 }
 
-// GetDanglingImages returns images with no tags (dangling)
-func (dc *DockerClient) GetDanglingImages() ([]ImageInfo, error) {
+// GetDanglingImages returns images with no tags (dangling).
+func (c *Client) GetDanglingImages(ctx context.Context) ([]ImageInfo, error) {
 	f := filters.NewArgs()
 	f.Add("dangling", "true")
 
-	images, err := dc.Client.ImageList(dc.ctx, image.ListOptions{Filters: f})
+	images, err := c.api.ImageList(ctx, image.ListOptions{Filters: f})
 	if err != nil {
 		return nil, err
 	}
@@ -353,47 +271,47 @@ func (dc *DockerClient) GetDanglingImages() ([]ImageInfo, error) {
 	return result, nil
 }
 
-// GetStoppedContainers returns containers that are not running
-func (dc *DockerClient) GetStoppedContainers() ([]ContainerInfo, error) {
+// GetStoppedContainers returns containers that are not running.
+func (c *Client) GetStoppedContainers(ctx context.Context) ([]ContainerInfo, error) {
 	f := filters.NewArgs()
 	f.Add("status", "exited")
 	f.Add("status", "created")
 	f.Add("status", "dead")
 
-	containers, err := dc.Client.ContainerList(dc.ctx, container.ListOptions{All: true, Filters: f})
+	containers, err := c.api.ContainerList(ctx, container.ListOptions{All: true, Filters: f})
 	if err != nil {
 		return nil, err
 	}
 
 	result := make([]ContainerInfo, len(containers))
-	for i, c := range containers {
+	for i, ct := range containers {
 		name := ""
-		if len(c.Names) > 0 {
-			name = c.Names[0]
+		if len(ct.Names) > 0 {
+			name = ct.Names[0]
 			if len(name) > 0 && name[0] == '/' {
 				name = name[1:]
 			}
 		}
 		result[i] = ContainerInfo{
-			ID:      truncateID(c.ID, 12),
+			ID:      truncateID(ct.ID, 12),
 			Name:    name,
-			Image:   c.Image,
-			Status:  c.Status,
-			State:   c.State,
-			Created: time.Unix(c.Created, 0),
-			Size:    c.SizeRw,
+			Image:   ct.Image,
+			Status:  ct.Status,
+			State:   ct.State,
+			Created: time.Unix(ct.Created, 0),
+			Size:    ct.SizeRw,
 		}
 	}
 
 	return result, nil
 }
 
-// GetUnusedVolumes returns volumes not attached to any container
-func (dc *DockerClient) GetUnusedVolumes() ([]VolumeInfo, error) {
+// GetUnusedVolumes returns volumes not attached to any container.
+func (c *Client) GetUnusedVolumes(ctx context.Context) ([]VolumeInfo, error) {
 	f := filters.NewArgs()
 	f.Add("dangling", "true")
 
-	volumes, err := dc.Client.VolumeList(dc.ctx, volume.ListOptions{Filters: f})
+	volumes, err := c.api.VolumeList(ctx, volume.ListOptions{Filters: f})
 	if err != nil {
 		return nil, err
 	}
@@ -414,68 +332,73 @@ func (dc *DockerClient) GetUnusedVolumes() ([]VolumeInfo, error) {
 	return result, nil
 }
 
-// RemoveContainer removes a container by ID
-func (dc *DockerClient) RemoveContainer(id string, force bool) error {
-	return dc.Client.ContainerRemove(dc.ctx, id, container.RemoveOptions{
+// RemoveContainer removes a container by ID.
+func (c *Client) RemoveContainer(ctx context.Context, id string, force bool) error {
+	return c.api.ContainerRemove(ctx, id, container.RemoveOptions{
 		Force:         force,
 		RemoveVolumes: false,
 	})
 }
 
-// RemoveImage removes an image by ID
-func (dc *DockerClient) RemoveImage(id string, force bool) error {
-	_, err := dc.Client.ImageRemove(dc.ctx, id, image.RemoveOptions{
+// RemoveImage removes an image by ID.
+func (c *Client) RemoveImage(ctx context.Context, id string, force bool) error {
+	_, err := c.api.ImageRemove(ctx, id, image.RemoveOptions{
 		Force:         force,
 		PruneChildren: true,
 	})
 	return err
 }
 
-// RemoveVolume removes a volume by name
-func (dc *DockerClient) RemoveVolume(name string, force bool) error {
-	return dc.Client.VolumeRemove(dc.ctx, name, force)
+// RemoveVolume removes a volume by name.
+func (c *Client) RemoveVolume(ctx context.Context, name string, force bool) error {
+	return c.api.VolumeRemove(ctx, name, force)
 }
 
-// PruneContainers removes all stopped containers
-func (dc *DockerClient) PruneContainers() (uint64, error) {
-	report, err := dc.Client.ContainersPrune(dc.ctx, filters.Args{})
+// RemoveNetwork removes a network by ID.
+func (c *Client) RemoveNetwork(ctx context.Context, id string) error {
+	return fmt.Errorf("not implemented")
+}
+
+// PruneContainers removes all stopped containers.
+func (c *Client) PruneContainers(ctx context.Context) (uint64, error) {
+	report, err := c.api.ContainersPrune(ctx, filters.Args{})
 	if err != nil {
 		return 0, err
 	}
 	return report.SpaceReclaimed, nil
 }
 
-// PruneImages removes all dangling images
-func (dc *DockerClient) PruneImages(all bool) (uint64, error) {
+// PruneImages removes all dangling images.
+func (c *Client) PruneImages(ctx context.Context, all bool) (uint64, error) {
 	f := filters.NewArgs()
 	if all {
 		f.Add("dangling", "false")
 	}
-	report, err := dc.Client.ImagesPrune(dc.ctx, f)
+	report, err := c.api.ImagesPrune(ctx, f)
 	if err != nil {
 		return 0, err
 	}
 	return report.SpaceReclaimed, nil
 }
 
-// PruneVolumes removes all unused volumes
-func (dc *DockerClient) PruneVolumes() (uint64, error) {
-	report, err := dc.Client.VolumesPrune(dc.ctx, filters.Args{})
+// PruneVolumes removes all unused volumes.
+func (c *Client) PruneVolumes(ctx context.Context) (uint64, error) {
+	report, err := c.api.VolumesPrune(ctx, filters.Args{})
 	if err != nil {
 		return 0, err
 	}
 	return report.SpaceReclaimed, nil
 }
 
-// PruneNetworks removes all unused networks
-func (dc *DockerClient) PruneNetworks() error {
-	_, err := dc.Client.NetworksPrune(dc.ctx, filters.Args{})
+// PruneNetworks removes all unused networks.
+func (c *Client) PruneNetworks(ctx context.Context) error {
+	_, err := c.api.NetworksPrune(ctx, filters.Args{})
 	return err
 }
 
-// PruneBuildCache removes build cache
-func (dc *DockerClient) PruneBuildCache(all bool) (uint64, error) {
-	report, err := dc.Client.BuildCachePrune(dc.ctx, types.BuildCachePruneOptions{All: all})
+// PruneBuildCache removes build cache.
+func (c *Client) PruneBuildCache(ctx context.Context, all bool) (uint64, error) {
+	report, err := c.api.BuildCachePrune(ctx, types.BuildCachePruneOptions{All: all})
 	if err != nil {
 		return 0, err
 	}
@@ -503,6 +426,7 @@ func trimImageID(id string) string {
 	return truncateID(id, 12)
 }
 
+// formatPorts formats a slice of Port mappings into a human-readable string.
 func formatPorts(ports []types.Port) string {
 	if len(ports) == 0 {
 		return ""
@@ -522,6 +446,7 @@ func formatPorts(ports []types.Port) string {
 	return result
 }
 
+// parseImageTag splits a Docker image tag into repository and tag components.
 func parseImageTag(tag string) (repo, tagName string) {
 	for i := len(tag) - 1; i >= 0; i-- {
 		if tag[i] == ':' {

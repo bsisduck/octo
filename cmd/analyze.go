@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/bsisduck/octo/internal/docker"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
@@ -129,16 +131,17 @@ func (m analyzeModel) Init() tea.Cmd {
 
 func (m analyzeModel) fetchResources() tea.Cmd {
 	return func() tea.Msg {
-		client, err := NewDockerClient()
+		client, err := docker.NewClient()
 		if err != nil {
 			return analyzeDataMsg{err: err}
 		}
+		defer client.Close()
 
 		var entries []ResourceEntry
 
 		// Fetch all resource types
 		if m.filterType == ResourceAll || m.filterType == ResourceContainers {
-			containers, err := client.ListContainers(true)
+			containers, err := client.ListContainers(context.Background(), true)
 			if err == nil {
 				if m.filterType == ResourceAll {
 					entries = append(entries, ResourceEntry{
@@ -167,7 +170,7 @@ func (m analyzeModel) fetchResources() tea.Cmd {
 		}
 
 		if m.filterType == ResourceAll || m.filterType == ResourceImages {
-			images, err := client.ListImages(true)
+			images, err := client.ListImages(context.Background(), true)
 			if err == nil {
 				if m.filterType == ResourceAll {
 					entries = append(entries, ResourceEntry{
@@ -207,7 +210,7 @@ func (m analyzeModel) fetchResources() tea.Cmd {
 		}
 
 		if m.filterType == ResourceAll || m.filterType == ResourceVolumes {
-			volumes, err := client.ListVolumes()
+			volumes, err := client.ListVolumes(context.Background())
 			if err == nil {
 				if m.filterType == ResourceAll {
 					entries = append(entries, ResourceEntry{
@@ -235,7 +238,7 @@ func (m analyzeModel) fetchResources() tea.Cmd {
 		}
 
 		if m.filterType == ResourceAll || m.filterType == ResourceNetworks {
-			networks, err := client.ListNetworks()
+			networks, err := client.ListNetworks(context.Background())
 			if err == nil {
 				if m.filterType == ResourceAll {
 					entries = append(entries, ResourceEntry{
@@ -264,7 +267,6 @@ func (m analyzeModel) fetchResources() tea.Cmd {
 			}
 		}
 
-		client.Close()
 		return analyzeDataMsg{entries: entries}
 	}
 }
@@ -380,7 +382,7 @@ func (m analyzeModel) deleteResource() tea.Cmd {
 			return analyzeDataMsg{entries: m.entries}
 		}
 
-		client, err := NewDockerClient()
+		client, err := docker.NewClient()
 		if err != nil {
 			return analyzeDataMsg{err: err}
 		}
@@ -393,11 +395,11 @@ func (m analyzeModel) deleteResource() tea.Cmd {
 
 		switch m.deleteTarget.Type {
 		case ResourceContainers:
-			err = client.RemoveContainer(m.deleteTarget.ID, true)
+			err = client.RemoveContainer(context.Background(), m.deleteTarget.ID, true)
 		case ResourceImages:
-			err = client.RemoveImage(m.deleteTarget.ID, true)
+			err = client.RemoveImage(context.Background(), m.deleteTarget.ID, true)
 		case ResourceVolumes:
-			err = client.RemoveVolume(m.deleteTarget.ID, false)
+			err = client.RemoveVolume(context.Background(), m.deleteTarget.ID, false)
 		}
 
 		if err != nil {

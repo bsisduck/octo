@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/bsisduck/octo/internal/docker"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
@@ -53,15 +55,17 @@ func runPrune(cmd *cobra.Command, args []string) {
 		fmt.Println()
 	}
 
-	client, err := NewDockerClient()
+	client, err := docker.NewClient()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error connecting to Docker: %v\n", err)
 		os.Exit(1)
 	}
 	defer client.Close()
 
+	ctx := context.Background()
+
 	// Get disk usage before
-	usageBefore, err := client.GetDiskUsage()
+	usageBefore, err := client.GetDiskUsage(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting disk usage: %v\n", err)
 		os.Exit(1)
@@ -126,7 +130,7 @@ func runPrune(cmd *cobra.Command, args []string) {
 
 	// Prune containers
 	fmt.Print("  Pruning containers... ")
-	containerReclaimed, err := client.PruneContainers()
+	containerReclaimed, err := client.PruneContainers(ctx)
 	if err != nil {
 		fmt.Println(warnStyle.Render(fmt.Sprintf("error: %v", err)))
 	} else {
@@ -136,7 +140,7 @@ func runPrune(cmd *cobra.Command, args []string) {
 
 	// Prune images
 	fmt.Print("  Pruning images... ")
-	imageReclaimed, err := client.PruneImages(all)
+	imageReclaimed, err := client.PruneImages(ctx, all)
 	if err != nil {
 		fmt.Println(warnStyle.Render(fmt.Sprintf("error: %v", err)))
 	} else {
@@ -148,7 +152,7 @@ func runPrune(cmd *cobra.Command, args []string) {
 	if pruneVolumes {
 		fmt.Print("  Pruning volumes... ")
 		var volumeReclaimed uint64
-		volumeReclaimed, err = client.PruneVolumes()
+		volumeReclaimed, err = client.PruneVolumes(ctx)
 		if err != nil {
 			fmt.Println(warnStyle.Render(fmt.Sprintf("error: %v", err)))
 		} else {
@@ -159,7 +163,7 @@ func runPrune(cmd *cobra.Command, args []string) {
 
 	// Prune networks
 	fmt.Print("  Pruning networks... ")
-	err = client.PruneNetworks()
+	err = client.PruneNetworks(ctx)
 	if err != nil {
 		fmt.Println(warnStyle.Render(fmt.Sprintf("error: %v", err)))
 	} else {
@@ -168,7 +172,7 @@ func runPrune(cmd *cobra.Command, args []string) {
 
 	// Prune build cache
 	fmt.Print("  Pruning build cache... ")
-	cacheReclaimed, err := client.PruneBuildCache(all)
+	cacheReclaimed, err := client.PruneBuildCache(ctx, all)
 	if err != nil {
 		fmt.Println(warnStyle.Render(fmt.Sprintf("error: %v", err)))
 	} else {

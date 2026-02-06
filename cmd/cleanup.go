@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/bsisduck/octo/internal/docker"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
@@ -62,15 +64,17 @@ func runCleanup(cmd *cobra.Command, args []string) {
 		fmt.Println()
 	}
 
-	client, err := NewDockerClient()
+	client, err := docker.NewClient()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error connecting to Docker: %v\n", err)
 		os.Exit(1)
 	}
 	defer client.Close()
 
+	ctx := context.Background()
+
 	// Get current disk usage for comparison
-	initialUsage, _ := client.GetDiskUsage()
+	initialUsage, _ := client.GetDiskUsage(ctx)
 
 	var totalReclaimed uint64
 
@@ -79,7 +83,7 @@ func runCleanup(cmd *cobra.Command, args []string) {
 		fmt.Println()
 		fmt.Println(sectionStyle.Render("Stopped Containers"))
 
-		stopped, err := client.GetStoppedContainers()
+		stopped, err := client.GetStoppedContainers(ctx)
 		if err != nil {
 			fmt.Printf("  %s\n", warnStyle.Render(fmt.Sprintf("Error: %v", err)))
 		} else if len(stopped) == 0 {
@@ -91,7 +95,7 @@ func runCleanup(cmd *cobra.Command, args []string) {
 			}
 
 			if !IsDryRun() && (force || confirmAction("Remove stopped containers?")) {
-				reclaimed, err := client.PruneContainers()
+				reclaimed, err := client.PruneContainers(ctx)
 				if err != nil {
 					fmt.Printf("  %s\n", warnStyle.Render(fmt.Sprintf("Error: %v", err)))
 				} else {
@@ -110,7 +114,7 @@ func runCleanup(cmd *cobra.Command, args []string) {
 		fmt.Println()
 		fmt.Println(sectionStyle.Render("Dangling Images"))
 
-		dangling, err := client.GetDanglingImages()
+		dangling, err := client.GetDanglingImages(ctx)
 		if err != nil {
 			fmt.Printf("  %s\n", warnStyle.Render(fmt.Sprintf("Error: %v", err)))
 		} else if len(dangling) == 0 {
@@ -123,7 +127,7 @@ func runCleanup(cmd *cobra.Command, args []string) {
 			}
 
 			if !IsDryRun() && (force || confirmAction("Remove dangling images?")) {
-				reclaimed, err := client.PruneImages(all)
+				reclaimed, err := client.PruneImages(ctx, all)
 				if err != nil {
 					fmt.Printf("  %s\n", warnStyle.Render(fmt.Sprintf("Error: %v", err)))
 				} else {
@@ -143,7 +147,7 @@ func runCleanup(cmd *cobra.Command, args []string) {
 		fmt.Println()
 		fmt.Println(sectionStyle.Render("Unused Volumes"))
 
-		unused, err := client.GetUnusedVolumes()
+		unused, err := client.GetUnusedVolumes(ctx)
 		if err != nil {
 			fmt.Printf("  %s\n", warnStyle.Render(fmt.Sprintf("Error: %v", err)))
 		} else if len(unused) == 0 {
@@ -159,7 +163,7 @@ func runCleanup(cmd *cobra.Command, args []string) {
 			}
 
 			if !IsDryRun() && (force || confirmAction("Remove unused volumes?")) {
-				reclaimed, err := client.PruneVolumes()
+				reclaimed, err := client.PruneVolumes(ctx)
 				if err != nil {
 					fmt.Printf("  %s\n", warnStyle.Render(fmt.Sprintf("Error: %v", err)))
 				} else {
@@ -178,11 +182,11 @@ func runCleanup(cmd *cobra.Command, args []string) {
 		fmt.Println()
 		fmt.Println(sectionStyle.Render("Unused Networks"))
 
-		networks, err := client.ListNetworks()
+		networks, err := client.ListNetworks(ctx)
 		if err != nil {
 			fmt.Printf("  %s\n", warnStyle.Render(fmt.Sprintf("Error: %v", err)))
 		} else {
-			unused := []NetworkInfo{}
+			unused := []docker.NetworkInfo{}
 			for _, n := range networks {
 				// Skip default networks
 				if n.Name == "bridge" || n.Name == "host" || n.Name == "none" {
@@ -198,11 +202,11 @@ func runCleanup(cmd *cobra.Command, args []string) {
 			} else {
 				fmt.Printf("  Found %d unused networks\n", len(unused))
 				for _, n := range unused {
-					fmt.Printf("    • %s (%s)\n", n.Name, n.Driver)
+					fmt.Printf("    • %s (%s)\n", n.Name, n.ID)
 				}
 
 				if !IsDryRun() && (force || confirmAction("Remove unused networks?")) {
-					err := client.PruneNetworks()
+					err := client.PruneNetworks(ctx)
 					if err != nil {
 						fmt.Printf("  %s\n", warnStyle.Render(fmt.Sprintf("Error: %v", err)))
 					} else {
@@ -224,7 +228,7 @@ func runCleanup(cmd *cobra.Command, args []string) {
 			fmt.Printf("  Current build cache: %s\n", humanize.Bytes(uint64(initialUsage.BuildCache)))
 
 			if !IsDryRun() && (force || confirmAction("Clear build cache?")) {
-				reclaimed, err := client.PruneBuildCache(all)
+				reclaimed, err := client.PruneBuildCache(ctx, all)
 				if err != nil {
 					fmt.Printf("  %s\n", warnStyle.Render(fmt.Sprintf("Error: %v", err)))
 				} else {

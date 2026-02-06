@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
+	"github.com/bsisduck/octo/internal/docker"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
@@ -43,7 +45,7 @@ type menuModel struct {
 	height       int
 	err          error
 	dockerOK     bool
-	diskUsage    *DiskUsageInfo
+	diskUsage    *docker.DiskUsageInfo
 	containers   int
 	running      int
 	images       int
@@ -58,7 +60,7 @@ type menuItem struct {
 
 type menuInitMsg struct {
 	dockerOK   bool
-	diskUsage  *DiskUsageInfo
+	diskUsage  *docker.DiskUsageInfo
 	containers int
 	running    int
 	images     int
@@ -81,16 +83,18 @@ func newMenuModel() menuModel {
 
 func (m menuModel) Init() tea.Cmd {
 	return func() tea.Msg {
-		client, err := NewDockerClient()
+		client, err := docker.NewClient()
 		if err != nil {
 			return menuInitMsg{dockerOK: false, err: err}
 		}
 		defer client.Close()
 
-		diskUsage, _ := client.GetDiskUsage()
-		containers, _ := client.ListContainers(true)
-		images, _ := client.ListImages(true)
-		volumes, _ := client.ListVolumes()
+		ctx := context.Background()
+
+		diskUsage, _ := client.GetDiskUsage(ctx)
+		containers, _ := client.ListContainers(ctx, true)
+		images, _ := client.ListImages(ctx, true)
+		volumes, _ := client.ListVolumes(ctx)
 
 		running := 0
 		for _, c := range containers {
