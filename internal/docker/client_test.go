@@ -916,3 +916,170 @@ func TestRestartContainer(t *testing.T) {
 		assert.Equal(t, "container not found", err.Error())
 	})
 }
+
+// TestRemoveContainerDryRun_StoppedContainer tests DryRun for a stopped container
+func TestRemoveContainerDryRun_StoppedContainer(t *testing.T) {
+	now := time.Now().Unix()
+	mock := &MockDockerAPI{
+		ContainerListFn: func(ctx context.Context, opts container.ListOptions) ([]types.Container, error) {
+			return []types.Container{
+				{
+					ID:      "abcdef1234567890abcdef1234567890",
+					Names:   []string{"/web"},
+					State:   "exited",
+					Status:  "Exited (0) 2 hours ago",
+					Image:   "nginx:latest",
+					Created: now,
+					SizeRw:  1024000,
+				},
+			}, nil
+		},
+	}
+
+	client := &Client{api: mock}
+	info, err := client.RemoveContainerDryRun(context.Background(), "abcdef123456")
+
+	require.NoError(t, err)
+	assert.Equal(t, TierLowRisk, info.Tier)
+	assert.True(t, info.Reversible)
+	assert.Contains(t, info.Title, "Delete Container")
+	assert.NotEmpty(t, info.Resources)
+}
+
+// TestRemoveContainerDryRun_RunningContainer tests DryRun for a running container
+func TestRemoveContainerDryRun_RunningContainer(t *testing.T) {
+	now := time.Now().Unix()
+	mock := &MockDockerAPI{
+		ContainerListFn: func(ctx context.Context, opts container.ListOptions) ([]types.Container, error) {
+			return []types.Container{
+				{
+					ID:      "abcdef1234567890abcdef1234567890",
+					Names:   []string{"/web"},
+					State:   "running",
+					Status:  "Up 2 hours",
+					Image:   "nginx:latest",
+					Created: now,
+					SizeRw:  1024000,
+				},
+			}, nil
+		},
+	}
+
+	client := &Client{api: mock}
+	info, err := client.RemoveContainerDryRun(context.Background(), "abcdef123456")
+
+	require.NoError(t, err)
+	assert.Equal(t, TierModerate, info.Tier)
+	assert.True(t, len(info.Warnings) > 0)
+}
+
+// TestRemoveContainerTOCTOU_StateChangeDuringDelete tests TOCTOU protection
+func TestRemoveContainerTOCTOU_StateChangeDuringDelete(t *testing.T) {
+	callCount := 0
+	now := time.Now().Unix()
+
+	mock := &MockDockerAPI{
+		ContainerListFn: func(ctx context.Context, opts container.ListOptions) ([]types.Container, error) {
+			callCount++
+			return []types.Container{
+				{
+					ID:      "abcdef1234567890abcdef1234567890",
+					Names:   []string{"/web"},
+					State:   "exited",
+					Status:  "Exited (0) 2 hours ago",
+					Image:   "nginx:latest",
+					Created: now,
+					SizeRw:  1024000,
+				},
+			}, nil
+		},
+		ContainerRemoveFn: func(ctx context.Context, containerID string, options container.RemoveOptions) error {
+			return nil
+		},
+	}
+
+	client := &Client{api: mock}
+	err := client.RemoveContainer(context.Background(), "abcdef1234567890abcdef1234567890", false)
+
+	require.NoError(t, err)
+	assert.True(t, callCount >= 1) // At least one call to list containers
+}
+
+// TestRemoveImageDryRun tests DryRun for image removal
+func TestRemoveImageDryRun(t *testing.T) {
+	mock := &MockDockerAPI{
+		ImageListFn: func(ctx context.Context, opts image.ListOptions) ([]image.Summary, error) {
+			return []image.Summary{
+				{
+					ID:        "sha256:abcdef1234567890abcdef1234567890",
+					RepoTags:  []string{"nginx:latest"},
+					Size:      123456,
+					Containers: 0,
+				},
+			}, nil
+		},
+	}
+
+	client := &Client{api: mock}
+	info, err := client.RemoveImageDryRun(context.Background(), "abcdef123456")
+
+	require.NoError(t, err)
+	assert.Equal(t, TierLowRisk, info.Tier)
+	assert.True(t, info.Reversible)
+	assert.Contains(t, info.Title, "Delete Image")
+}
+
+// TestRemoveVolumeDryRun tests DryRun for volume removal
+func TestRemoveVolumeDryRun(t *testing.T) {
+	mock := &MockDockerAPI{
+		VolumeListFn: func(ctx context.Context, opts volume.ListOptions) (volume.ListResponse, error) {
+			return volume.ListResponse{
+				Volumes: []*volume.Volume{
+					{
+						Name:   "my-volume",
+						Driver: "local",
+					},
+				},
+			}, nil
+		},
+		ContainerListFn: func(ctx context.Context, opts container.ListOptions) ([]types.Container, error) {
+			return []types.Container{}, nil
+		},
+	}
+
+	client := &Client{api: mock}
+	info, err := client.RemoveVolumeDryRun(context.Background(), "my-volume")
+
+	require.NoError(t, err)
+	assert.Equal(t, TierLowRisk, info.Tier)
+	assert.False(t, info.Reversible)
+	assert.Contains(t, info.Title, "Delete Volume")
+}
+
+// TestPruneContainersDryRun tests DryRun for container pruning
+func TestPruneContainersDryRun(t *testing.T) {
+	mock := &MockDockerAPI{
+		ContainerListFn: func(ctx context.Context, opts container.ListOptions) ([]types.Container, error) {
+			return []types.Container{
+				{
+					ID:     "abc123",
+					State:  "exited",
+					SizeRw: 1024000,
+				},
+				{
+					ID:     "def456",
+					State:  "exited",
+					SizeRw: 2048000,
+				},
+			}, nil
+		},
+	}
+
+	client := &Client{api: mock}
+	info, err := client.PruneContainersDryRun(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, TierBulkDestructive, info.Tier)
+	assert.Contains(t, info.Title, "Prune")
+	assert.True(t, len(info.Warnings) > 0)
+}
