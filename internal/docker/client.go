@@ -333,11 +333,39 @@ func (c *Client) GetUnusedVolumes(ctx context.Context) ([]VolumeInfo, error) {
 }
 
 // RemoveContainer removes a container by ID.
+// TOCTOU protection: Re-fetches container state before deletion to prevent race conditions
+// where a container's state may change between confirmation and actual deletion.
 func (c *Client) RemoveContainer(ctx context.Context, id string, force bool) error {
-	return c.api.ContainerRemove(ctx, id, container.RemoveOptions{
+	// Re-check: Fetch current state before deletion (TOCTOU protection)
+	containers, err := c.api.ContainerList(ctx, container.ListOptions{All: true})
+	if err != nil {
+		return fmt.Errorf("failed to re-check container state before deletion: %w", err)
+	}
+
+	// Find the container to verify it still exists and check its current state
+	var targetContainer *types.Container
+	for _, ct := range containers {
+		if truncateID(ct.ID, 12) == id || ct.ID == id {
+			t := ct
+			targetContainer = &t
+			break
+		}
+	}
+
+	if targetContainer == nil {
+		return fmt.Errorf("container not found")
+	}
+
+	// If force is false and container is running, prevent deletion
+	if !force && targetContainer.State == "running" {
+		return fmt.Errorf("cannot remove running container without force=true; container state changed or user requested non-force deletion")
+	}
+
+	opts := container.RemoveOptions{
 		Force:         force,
 		RemoveVolumes: false,
-	})
+	}
+	return c.api.ContainerRemove(ctx, id, opts)
 }
 
 // RemoveImage removes an image by ID.

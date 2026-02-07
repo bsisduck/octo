@@ -56,19 +56,20 @@ type ResourceEntry struct {
 }
 
 type Model struct {
-	docker        docker.DockerService
-	entries       []ResourceEntry
-	selected      int
-	offset        int
-	width         int
-	height        int
-	err           error
-	loading       bool
-	filterType    ResourceType
-	showDangling  bool
-	deleteConfirm bool
-	deleteTarget  *ResourceEntry
-	warnings      []string
+	docker              docker.DockerService
+	entries             []ResourceEntry
+	selected            int
+	offset              int
+	width               int
+	height              int
+	err                 error
+	loading             bool
+	filterType          ResourceType
+	showDangling        bool
+	deleteConfirm       bool
+	deleteTarget        *ResourceEntry
+	deleteConfirmInfo   *docker.ConfirmationInfo
+	warnings            []string
 }
 
 type DataMsg struct {
@@ -79,6 +80,15 @@ type DataMsg struct {
 
 // Exported for testing
 type dataMsg = DataMsg
+
+// ConfirmationMsg contains the result of a DryRun operation
+type ConfirmationMsg struct {
+	Info *docker.ConfirmationInfo
+	Err  error
+}
+
+// Exported for testing
+type confirmationMsg = ConfirmationMsg
 
 type Options struct {
 	TypeFilter string
@@ -309,12 +319,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				entry := m.entries[m.selected]
 				if entry.Selectable && !entry.IsCategory {
 					m.deleteTarget = &entry
-					m.deleteConfirm = true
+					// Phase 1: Call DryRun to get confirmation info (and re-check state)
+					return m, m.reCheckAndShowConfirmation()
 				}
 			}
+		case "s":
+			if m.canOperateOnSelected() && m.selectedEntry().Type == ResourceContainers {
+				return m, m.startSelectedContainer()
+			}
+		case "t":
+			if m.canOperateOnSelected() && m.selectedEntry().Type == ResourceContainers {
+				return m, m.stopSelectedContainer()
+			}
 		case "r":
-			m.loading = true
-			return m, m.fetchResources()
+			if m.canOperateOnSelected() && m.selectedEntry().Type == ResourceContainers {
+				return m, m.restartSelectedContainer()
+			} else {
+				// Only refresh if not operating on a container
+				if m.canOperateOnSelected() {
+					break
+				}
+				m.loading = true
+				return m, m.fetchResources()
+			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -337,6 +364,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
+		}
+
+	case ConfirmationMsg:
+		// Phase 1 completion: DryRun returned, show confirmation dialog
+		if msg.Err != nil {
+			m.warnings = append(m.warnings, fmt.Sprintf("Failed to prepare deletion: %v", msg.Err))
+			m.deleteTarget = nil
+			m.deleteConfirmInfo = nil
+		} else {
+			m.deleteConfirmInfo = msg.Info
+			m.deleteConfirm = true
 		}
 	}
 
@@ -366,6 +404,42 @@ func (m *Model) moveSelection(delta int) {
 	}
 }
 
+// reCheckAndShowConfirmation is Phase 1: Call DryRun to get confirmation info (and re-check state)
+func (m Model) reCheckAndShowConfirmation() tea.Cmd {
+	return func() tea.Msg {
+		if m.deleteTarget == nil {
+			return ConfirmationMsg{Err: fmt.Errorf("no target selected")}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), docker.TimeoutList)
+		defer cancel()
+
+		var info docker.ConfirmationInfo
+		var err error
+
+		switch m.deleteTarget.Type {
+		case ResourceContainers:
+			info, err = m.docker.RemoveContainerDryRun(ctx, m.deleteTarget.ID)
+		case ResourceImages:
+			info, err = m.docker.RemoveImageDryRun(ctx, m.deleteTarget.ID)
+		case ResourceVolumes:
+			info, err = m.docker.RemoveVolumeDryRun(ctx, m.deleteTarget.ID)
+		case ResourceNetworks:
+			info, err = m.docker.RemoveNetworkDryRun(ctx, m.deleteTarget.ID)
+		default:
+			err = fmt.Errorf("unsupported resource type for deletion: %v", m.deleteTarget.Type)
+		}
+
+		if err != nil {
+			return ConfirmationMsg{Err: err}
+		}
+
+		return ConfirmationMsg{Info: &info}
+	}
+}
+
+// deleteResource is Phase 2: Execute the actual deletion after user confirmation
+// Re-checks state one more time before executing (TOCTOU protection)
 func (m Model) deleteResource() tea.Cmd {
 	return func() tea.Msg {
 		if m.deleteTarget == nil {
@@ -375,28 +449,128 @@ func (m Model) deleteResource() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), docker.TimeoutRemove)
 		defer cancel()
 
+		// Phase 2: Re-check state one final time before execution (TOCTOU protection)
+		// Call DryRun again to verify state hasn't changed unexpectedly
+		var currentInfo docker.ConfirmationInfo
 		var err error
-		// Note: We cannot implement dry-run check easily here because `IsDryRun` is in cmd package.
-		// However, we can inject a dry-run flag into Options if needed.
-		// For now, assuming the caller (cmd) handles dry-run logic or we add it to model state.
-		// Since we want strict architecture, let's assume we execute.
-		// TODO: Add DryRun to Options struct.
 
 		switch m.deleteTarget.Type {
 		case ResourceContainers:
-			err = m.docker.RemoveContainer(ctx, m.deleteTarget.ID, true)
+			currentInfo, err = m.docker.RemoveContainerDryRun(ctx, m.deleteTarget.ID)
 		case ResourceImages:
-			err = m.docker.RemoveImage(ctx, m.deleteTarget.ID, true)
+			currentInfo, err = m.docker.RemoveImageDryRun(ctx, m.deleteTarget.ID)
 		case ResourceVolumes:
-			err = m.docker.RemoveVolume(ctx, m.deleteTarget.ID, false)
+			currentInfo, err = m.docker.RemoveVolumeDryRun(ctx, m.deleteTarget.ID)
+		case ResourceNetworks:
+			currentInfo, err = m.docker.RemoveNetworkDryRun(ctx, m.deleteTarget.ID)
+		default:
+			return DataMsg{Entries: m.entries, Warnings: append(m.warnings, fmt.Sprintf("unsupported resource type: %v", m.deleteTarget.Type))}
 		}
 
 		if err != nil {
-			// Instead of full failure, we could return a warning
+			return DataMsg{Entries: m.entries, Warnings: append(m.warnings, fmt.Sprintf("State changed during confirmation (TOCTOU): %v", err))}
+		}
+
+		// Check if tier changed (indicates state change)
+		if m.deleteConfirmInfo != nil && currentInfo.Tier != m.deleteConfirmInfo.Tier {
+			return DataMsg{Entries: m.entries, Warnings: append(m.warnings, fmt.Sprintf("WARNING: Resource state changed from %s to %s - operation aborted for safety", m.deleteConfirmInfo.Tier.String(), currentInfo.Tier.String()))}
+		}
+
+		// Now execute the actual deletion
+		switch m.deleteTarget.Type {
+		case ResourceContainers:
+			err = m.docker.RemoveContainer(ctx, m.deleteTarget.ID, false)
+		case ResourceImages:
+			err = m.docker.RemoveImage(ctx, m.deleteTarget.ID, false)
+		case ResourceVolumes:
+			err = m.docker.RemoveVolume(ctx, m.deleteTarget.ID, false)
+		case ResourceNetworks:
+			err = m.docker.RemoveNetwork(ctx, m.deleteTarget.ID)
+		}
+
+		// Clear confirmation state
+		m.deleteConfirm = false
+		m.deleteTarget = nil
+		m.deleteConfirmInfo = nil
+
+		if err != nil {
 			return DataMsg{Entries: m.entries, Warnings: append(m.warnings, err.Error())}
 		}
 
 		// Refresh data
+		return m.fetchResources()()
+	}
+}
+
+// canOperateOnSelected checks if we can operate on the currently selected entry.
+func (m *Model) canOperateOnSelected() bool {
+	return m.selected < len(m.entries) && m.entries[m.selected].Selectable && !m.entries[m.selected].IsCategory
+}
+
+// selectedEntry returns the currently selected entry.
+func (m *Model) selectedEntry() ResourceEntry {
+	if m.selected < len(m.entries) {
+		return m.entries[m.selected]
+	}
+	return ResourceEntry{}
+}
+
+func (m Model) startSelectedContainer() tea.Cmd {
+	return func() tea.Msg {
+		if !m.canOperateOnSelected() {
+			return DataMsg{Entries: m.entries, Warnings: m.warnings}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), docker.TimeoutAction)
+		defer cancel()
+
+		err := m.docker.StartContainer(ctx, m.selectedEntry().ID)
+
+		if err != nil {
+			return DataMsg{Entries: m.entries, Warnings: append(m.warnings, fmt.Sprintf("Failed to start container: %v", err))}
+		}
+
+		// Refresh data to show updated state
+		return m.fetchResources()()
+	}
+}
+
+func (m Model) stopSelectedContainer() tea.Cmd {
+	return func() tea.Msg {
+		if !m.canOperateOnSelected() {
+			return DataMsg{Entries: m.entries, Warnings: m.warnings}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), docker.TimeoutAction)
+		defer cancel()
+
+		err := m.docker.StopContainer(ctx, m.selectedEntry().ID)
+
+		if err != nil {
+			return DataMsg{Entries: m.entries, Warnings: append(m.warnings, fmt.Sprintf("Failed to stop container: %v", err))}
+		}
+
+		// Refresh data to show updated state
+		return m.fetchResources()()
+	}
+}
+
+func (m Model) restartSelectedContainer() tea.Cmd {
+	return func() tea.Msg {
+		if !m.canOperateOnSelected() {
+			return DataMsg{Entries: m.entries, Warnings: m.warnings}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), docker.TimeoutAction)
+		defer cancel()
+
+		err := m.docker.RestartContainer(ctx, m.selectedEntry().ID)
+
+		if err != nil {
+			return DataMsg{Entries: m.entries, Warnings: append(m.warnings, fmt.Sprintf("Failed to restart container: %v", err))}
+		}
+
+		// Refresh data to show updated state
 		return m.fetchResources()()
 	}
 }
@@ -422,10 +596,9 @@ func (m Model) View() string {
 	b.WriteString(strings.Repeat("─", 60))
 	b.WriteString("\n\n")
 
-	// Delete confirmation
-	if m.deleteConfirm && m.deleteTarget != nil {
-		b.WriteString(styles.Error.Render(
-			fmt.Sprintf("Delete %s '%s'? (y/n)", m.deleteTarget.Type.String(), m.deleteTarget.Name)))
+	// Delete confirmation dialog (detailed)
+	if m.deleteConfirm && m.deleteTarget != nil && m.deleteConfirmInfo != nil {
+		b.WriteString(m.renderConfirmationDialog(*m.deleteConfirmInfo))
 		b.WriteString("\n\n")
 	}
 
@@ -492,6 +665,52 @@ func (m Model) View() string {
 	b.WriteString(strings.Repeat("─", 60))
 	b.WriteString("\n")
 	b.WriteString(styles.Help.Render("↑↓/jk: navigate | Enter: drill down | d: delete | r: refresh | q: quit"))
+
+	return b.String()
+}
+
+// renderConfirmationDialog renders a detailed confirmation dialog with safety tier colors
+func (m Model) renderConfirmationDialog(info docker.ConfirmationInfo) string {
+	var b strings.Builder
+
+	// Tier-colored title
+	tierStyle := styles.TierStyle(int(info.Tier))
+	b.WriteString(tierStyle.Render(fmt.Sprintf("⚠ %s\n", info.Title)))
+
+	// Description
+	b.WriteString(styles.Info.Render(fmt.Sprintf("   %s\n", info.Description)))
+
+	// Resources list
+	if len(info.Resources) > 0 {
+		b.WriteString(styles.Help.Render("   Resources:\n"))
+		for _, r := range info.Resources {
+			b.WriteString(styles.Help.Render(fmt.Sprintf("     • %s\n", r)))
+		}
+	}
+
+	// Reversibility status
+	if info.Reversible {
+		b.WriteString(styles.Success.Render("   ✓ Reversible\n"))
+		b.WriteString(styles.Help.Render(fmt.Sprintf("   %s\n", info.UndoInstructions)))
+	} else {
+		b.WriteString(tierStyle.Render("   ✗ NOT REVERSIBLE - Data will be permanently lost\n"))
+		b.WriteString(styles.Help.Render(fmt.Sprintf("   %s\n", info.UndoInstructions)))
+	}
+
+	// Warnings
+	if len(info.Warnings) > 0 {
+		b.WriteString(styles.Warning.Render("   ⚠ Warnings:\n"))
+		for _, w := range info.Warnings {
+			b.WriteString(styles.Warning.Render(fmt.Sprintf("     • %s\n", w)))
+		}
+	}
+
+	// Safety tier indicator
+	b.WriteString(tierStyle.Render(fmt.Sprintf("   Safety Level: %s\n", info.Tier.String())))
+
+	// Confirmation prompt
+	b.WriteString("\n")
+	b.WriteString(styles.DeleteConfirm.Render("   Confirm deletion? [y] Yes  [n] No"))
 
 	return b.String()
 }
