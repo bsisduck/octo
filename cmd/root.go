@@ -48,6 +48,15 @@ Run 'octo' without arguments to launch the interactive menu.`, octoLogo, octoTag
 		return runInteractiveMenu()
 	},
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// Validate output-format flag
+		outputFormat, _ := cmd.Flags().GetString("output-format")
+		switch outputFormat {
+		case "text", "json", "yaml":
+			// Valid formats
+		default:
+			return fmt.Errorf("invalid output format: %s. Choose: text, json, yaml", outputFormat)
+		}
+
 		if noColor || os.Getenv("NO_COLOR") != "" {
 			styles.DisableColors()
 		}
@@ -67,6 +76,12 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "Enable debug output")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Preview changes without executing")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable colored output")
+	rootCmd.PersistentFlags().String("output-format", "text", "Output format: text, json, yaml")
+
+	// Register completion for output-format flag
+	rootCmd.RegisterFlagCompletionFunc("output-format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"text", "json", "yaml"}, cobra.ShellCompDirectiveDefault
+	})
 
 	// Add subcommands
 	rootCmd.AddCommand(statusCmd)
