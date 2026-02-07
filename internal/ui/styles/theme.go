@@ -115,6 +115,48 @@ var (
 		Bold(true)
 )
 
+// Tier-specific styles for safety confirmation dialogs
+var (
+	TierInformationalStyle = lipgloss.NewStyle().
+		Foreground(ColorPrimary).
+		Bold(true)
+
+	TierLowRiskStyle = lipgloss.NewStyle().
+		Foreground(ColorSuccess).
+		Bold(true)
+
+	TierModerateStyle = lipgloss.NewStyle().
+		Foreground(ColorWarning).
+		Bold(true)
+
+	TierHighRiskStyle = lipgloss.NewStyle().
+		Foreground(ColorError).
+		Bold(true)
+
+	TierBulkDestructiveStyle = lipgloss.NewStyle().
+		Foreground(ColorError).
+		Bold(true).
+		Background(lipgloss.Color("52")) // Dark red background
+)
+
+// TierStyle returns the appropriate style for a safety tier
+func TierStyle(tier int) lipgloss.Style {
+	switch tier {
+	case 0: // TierInformational
+		return TierInformationalStyle
+	case 1: // TierLowRisk
+		return TierLowRiskStyle
+	case 2: // TierModerate
+		return TierModerateStyle
+	case 3: // TierHighRisk
+		return TierHighRiskStyle
+	case 4: // TierBulkDestructive
+		return TierBulkDestructiveStyle
+	default:
+		return TierInformationalStyle
+	}
+}
+
 // DisableColors forces all Lipgloss rendering to produce plain text.
 // Call once at startup from cmd/root.go based on --no-color flag.
 func DisableColors() {

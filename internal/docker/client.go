@@ -356,7 +356,356 @@ func (c *Client) RemoveVolume(ctx context.Context, name string, force bool) erro
 
 // RemoveNetwork removes a network by ID.
 func (c *Client) RemoveNetwork(ctx context.Context, id string) error {
-	return fmt.Errorf("not implemented")
+	// Implement network removal using the raw Docker API
+	return c.api.NetworkRemove(ctx, id)
+}
+
+// RemoveNetworkDryRun returns confirmation info for network removal without deleting
+func (c *Client) RemoveNetworkDryRun(ctx context.Context, id string) (ConfirmationInfo, error) {
+	networks, err := c.api.NetworkList(ctx, network.ListOptions{})
+	if err != nil {
+		return ConfirmationInfo{}, err
+	}
+
+	var target *network.Summary
+	for _, n := range networks {
+		if truncateID(n.ID, 12) == id || n.ID == id {
+			target = &n
+			break
+		}
+	}
+
+	if target == nil {
+		return ConfirmationInfo{}, fmt.Errorf("network not found")
+	}
+
+	// Networks cannot be recreated easily, so they're not reversible in practical terms
+	info := ConfirmationInfo{
+		Tier:        TierModerate,
+		Title:       "Delete Network?",
+		Description: fmt.Sprintf("Network '%s' (%s, %d containers)", target.Name, target.Driver, len(target.Containers)),
+		Resources: []string{
+			fmt.Sprintf("network: %s", target.Name),
+			fmt.Sprintf("driver: %s", target.Driver),
+			fmt.Sprintf("containers: %d", len(target.Containers)),
+		},
+		Reversible:       false,
+		UndoInstructions: "Network must be manually recreated",
+		Warnings:         []string{},
+	}
+
+	if len(target.Containers) > 0 {
+		info.Tier = TierHighRisk
+		info.Warnings = append(info.Warnings, fmt.Sprintf("Network has %d connected container(s)", len(target.Containers)))
+	}
+
+	// Check if it's a system network
+	if target.Name == "bridge" || target.Name == "host" || target.Name == "none" {
+		info.Tier = TierBulkDestructive
+		info.Warnings = append(info.Warnings, "Cannot delete system networks")
+	}
+
+	return info, nil
+}
+
+// RemoveContainerDryRun returns confirmation info for container removal without deleting
+func (c *Client) RemoveContainerDryRun(ctx context.Context, id string) (ConfirmationInfo, error) {
+	containers, err := c.api.ContainerList(ctx, container.ListOptions{All: true})
+	if err != nil {
+		return ConfirmationInfo{}, err
+	}
+
+	var target *types.Container
+	for _, ct := range containers {
+		if truncateID(ct.ID, 12) == id || ct.ID == id {
+			t := ct
+			target = &t
+			break
+		}
+	}
+
+	if target == nil {
+		return ConfirmationInfo{}, fmt.Errorf("container not found")
+	}
+
+	name := ""
+	if len(target.Names) > 0 {
+		name = target.Names[0]
+		if len(name) > 0 && name[0] == '/' {
+			name = name[1:]
+		}
+	}
+
+	tier := TierLowRisk
+	reversible := true
+	undoInstructions := "Can be recreated from image " + target.Image
+	warnings := []string{}
+
+	if target.State == "running" {
+		tier = TierModerate
+		warnings = append(warnings, "Container is currently running")
+	}
+
+	info := ConfirmationInfo{
+		Tier:             tier,
+		Title:            "Delete Container?",
+		Description:      fmt.Sprintf("%s container '%s' (%s)", strings.Title(target.State), name, target.Image),
+		Resources:        []string{fmt.Sprintf("container: %s", name), fmt.Sprintf("image: %s", target.Image), fmt.Sprintf("size: %s", formatBytes(target.SizeRw))},
+		Reversible:       reversible,
+		UndoInstructions: undoInstructions,
+		Warnings:         warnings,
+	}
+
+	return info, nil
+}
+
+// RemoveImageDryRun returns confirmation info for image removal without deleting
+func (c *Client) RemoveImageDryRun(ctx context.Context, id string) (ConfirmationInfo, error) {
+	images, err := c.api.ImageList(ctx, image.ListOptions{All: true})
+	if err != nil {
+		return ConfirmationInfo{}, err
+	}
+
+	var target *image.Summary
+	for _, img := range images {
+		if trimImageID(img.ID) == id || img.ID == id {
+			t := img
+			target = &t
+			break
+		}
+	}
+
+	if target == nil {
+		return ConfirmationInfo{}, fmt.Errorf("image not found")
+	}
+
+	// Determine image name
+	imageName := "<none>"
+	if len(target.RepoTags) > 0 && target.RepoTags[0] != "<none>:<none>" {
+		imageName = target.RepoTags[0]
+	}
+
+	tier := TierLowRisk
+	if target.Containers > 0 {
+		tier = TierHighRisk
+	}
+
+	warnings := []string{}
+	if target.Containers > 0 {
+		warnings = append(warnings, fmt.Sprintf("Image is used by %d container(s)", target.Containers))
+	}
+
+	info := ConfirmationInfo{
+		Tier:             tier,
+		Title:            "Delete Image?",
+		Description:      fmt.Sprintf("Image '%s' (%s)", imageName, formatBytes(target.Size)),
+		Resources:        []string{fmt.Sprintf("image: %s", imageName), fmt.Sprintf("size: %s", formatBytes(target.Size)), fmt.Sprintf("containers: %d", target.Containers)},
+		Reversible:       true,
+		UndoInstructions: "Can be pulled from registry",
+		Warnings:         warnings,
+	}
+
+	return info, nil
+}
+
+// RemoveVolumeDryRun returns confirmation info for volume removal without deleting
+func (c *Client) RemoveVolumeDryRun(ctx context.Context, name string) (ConfirmationInfo, error) {
+	volumes, err := c.api.VolumeList(ctx, volume.ListOptions{})
+	if err != nil {
+		return ConfirmationInfo{}, err
+	}
+
+	var target *volume.Volume
+	for _, v := range volumes.Volumes {
+		if v.Name == name {
+			target = v
+			break
+		}
+	}
+
+	if target == nil {
+		return ConfirmationInfo{}, fmt.Errorf("volume not found")
+	}
+
+	// Check if volume is in use
+	containers, _ := c.api.ContainerList(ctx, container.ListOptions{All: true})
+	inUse := false
+	for _, ct := range containers {
+		for _, m := range ct.Mounts {
+			if m.Type == "volume" && m.Name == name {
+				inUse = true
+				break
+			}
+		}
+	}
+
+	tier := TierLowRisk
+	if inUse {
+		tier = TierHighRisk
+	}
+
+	warnings := []string{}
+	if inUse {
+		warnings = append(warnings, "Volume is currently in use by container(s)")
+	}
+
+	info := ConfirmationInfo{
+		Tier:             tier,
+		Title:            "Delete Volume?",
+		Description:      fmt.Sprintf("Volume '%s' (%s)", name, target.Driver),
+		Resources:        []string{fmt.Sprintf("volume: %s", name), fmt.Sprintf("driver: %s", target.Driver)},
+		Reversible:       false,
+		UndoInstructions: "Data cannot be recovered",
+		Warnings:         warnings,
+	}
+
+	return info, nil
+}
+
+// PruneContainersDryRun returns confirmation info for container pruning without executing
+func (c *Client) PruneContainersDryRun(ctx context.Context) (ConfirmationInfo, error) {
+	f := filters.NewArgs()
+	f.Add("status", "exited")
+	f.Add("status", "created")
+	f.Add("status", "dead")
+
+	containers, err := c.api.ContainerList(ctx, container.ListOptions{All: true, Filters: f})
+	if err != nil {
+		return ConfirmationInfo{}, err
+	}
+
+	totalSize := int64(0)
+	for _, ct := range containers {
+		totalSize += ct.SizeRw
+	}
+
+	resources := []string{
+		fmt.Sprintf("stopped containers: %d", len(containers)),
+		fmt.Sprintf("total size: %s", formatBytes(totalSize)),
+	}
+
+	info := ConfirmationInfo{
+		Tier:             TierBulkDestructive,
+		Title:            "Prune Stopped Containers?",
+		Description:      fmt.Sprintf("Remove %d stopped container(s), freeing %s", len(containers), formatBytes(totalSize)),
+		Resources:        resources,
+		Reversible:       true,
+		UndoInstructions: "Can be recreated from images",
+		Warnings:         []string{"This is a bulk operation"},
+	}
+
+	return info, nil
+}
+
+// PruneImagesDryRun returns confirmation info for image pruning without executing
+func (c *Client) PruneImagesDryRun(ctx context.Context, all bool) (ConfirmationInfo, error) {
+	images, err := c.api.ImageList(ctx, image.ListOptions{All: true})
+	if err != nil {
+		return ConfirmationInfo{}, err
+	}
+
+	// Calculate what would be pruned
+	totalSize := int64(0)
+	pruneCount := 0
+
+	for _, img := range images {
+		if all {
+			// If all=true, would prune all dangling and unreferenced
+			if img.Containers == 0 {
+				totalSize += img.Size
+				pruneCount++
+			}
+		} else {
+			// Otherwise just dangling
+			if len(img.RepoTags) == 0 || (len(img.RepoTags) == 1 && img.RepoTags[0] == "<none>:<none>") {
+				totalSize += img.Size
+				pruneCount++
+			}
+		}
+	}
+
+	pruneType := "dangling images"
+	if all {
+		pruneType = "unused images"
+	}
+
+	info := ConfirmationInfo{
+		Tier:             TierBulkDestructive,
+		Title:            "Prune Images?",
+		Description:      fmt.Sprintf("Remove %d %s, freeing %s", pruneCount, pruneType, formatBytes(totalSize)),
+		Resources:        []string{fmt.Sprintf("images to remove: %d", pruneCount), fmt.Sprintf("space freed: %s", formatBytes(totalSize))},
+		Reversible:       true,
+		UndoInstructions: "Can be pulled from registry",
+		Warnings:         []string{"This is a bulk operation"},
+	}
+
+	return info, nil
+}
+
+// PruneVolumesDryRun returns confirmation info for volume pruning without executing
+func (c *Client) PruneVolumesDryRun(ctx context.Context) (ConfirmationInfo, error) {
+	f := filters.NewArgs()
+	f.Add("dangling", "true")
+
+	volumes, err := c.api.VolumeList(ctx, volume.ListOptions{Filters: f})
+	if err != nil {
+		return ConfirmationInfo{}, err
+	}
+
+	info := ConfirmationInfo{
+		Tier:             TierBulkDestructive,
+		Title:            "Prune Unused Volumes?",
+		Description:      fmt.Sprintf("Remove %d unused volume(s)", len(volumes.Volumes)),
+		Resources:        []string{fmt.Sprintf("unused volumes: %d", len(volumes.Volumes))},
+		Reversible:       false,
+		UndoInstructions: "Data cannot be recovered",
+		Warnings:         []string{"This is a bulk operation", "Volume data will be permanently deleted"},
+	}
+
+	return info, nil
+}
+
+// PruneNetworksDryRun returns confirmation info for network pruning without executing
+func (c *Client) PruneNetworksDryRun(ctx context.Context) (ConfirmationInfo, error) {
+	networks, err := c.api.NetworkList(ctx, network.ListOptions{})
+	if err != nil {
+		return ConfirmationInfo{}, err
+	}
+
+	// Count unused networks (excluding system networks)
+	pruneCount := 0
+	for _, n := range networks {
+		if len(n.Containers) == 0 && n.Name != "bridge" && n.Name != "host" && n.Name != "none" {
+			pruneCount++
+		}
+	}
+
+	info := ConfirmationInfo{
+		Tier:             TierBulkDestructive,
+		Title:            "Prune Unused Networks?",
+		Description:      fmt.Sprintf("Remove %d unused network(s)", pruneCount),
+		Resources:        []string{fmt.Sprintf("unused networks: %d", pruneCount)},
+		Reversible:       false,
+		UndoInstructions: "Networks must be manually recreated",
+		Warnings:         []string{"This is a bulk operation"},
+	}
+
+	return info, nil
+}
+
+// StartContainer starts a container by ID.
+func (c *Client) StartContainer(ctx context.Context, id string) error {
+	return c.api.ContainerStart(ctx, id, container.StartOptions{})
+}
+
+// StopContainer stops a container by ID.
+func (c *Client) StopContainer(ctx context.Context, id string) error {
+	return c.api.ContainerStop(ctx, id, container.StopOptions{})
+}
+
+// RestartContainer restarts a container by ID.
+func (c *Client) RestartContainer(ctx context.Context, id string) error {
+	return c.api.ContainerRestart(ctx, id, container.StopOptions{})
 }
 
 // PruneContainers removes all stopped containers.
@@ -457,4 +806,18 @@ func parseImageTag(tag string) (repo, tagName string) {
 		}
 	}
 	return tag, "latest"
+}
+
+// formatBytes formats a byte count into human-readable format
+func formatBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }

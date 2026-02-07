@@ -26,6 +26,10 @@ type DockerAPI interface {
 	ContainerRemove(ctx context.Context, containerID string, options container.RemoveOptions) error
 	ImageRemove(ctx context.Context, imageID string, options image.RemoveOptions) ([]image.DeleteResponse, error)
 	VolumeRemove(ctx context.Context, volumeID string, force bool) error
+	NetworkRemove(ctx context.Context, networkID string) error
+	ContainerStart(ctx context.Context, containerID string, options container.StartOptions) error
+	ContainerStop(ctx context.Context, containerID string, options container.StopOptions) error
+	ContainerRestart(ctx context.Context, containerID string, options container.StopOptions) error
 	ContainersPrune(ctx context.Context, pruneFilters filters.Args) (container.PruneReport, error)
 	ImagesPrune(ctx context.Context, pruneFilters filters.Args) (image.PruneReport, error)
 	VolumesPrune(ctx context.Context, pruneFilters filters.Args) (volume.PruneReport, error)
@@ -51,9 +55,21 @@ type DockerService interface {
 	RemoveImage(ctx context.Context, id string, force bool) error
 	RemoveVolume(ctx context.Context, name string, force bool) error
 	RemoveNetwork(ctx context.Context, id string) error
+	StartContainer(ctx context.Context, id string) error
+	StopContainer(ctx context.Context, id string) error
+	RestartContainer(ctx context.Context, id string) error
 	PruneContainers(ctx context.Context) (uint64, error)
 	PruneImages(ctx context.Context, all bool) (uint64, error)
 	PruneVolumes(ctx context.Context) (uint64, error)
 	PruneNetworks(ctx context.Context) error
 	PruneBuildCache(ctx context.Context, all bool) (uint64, error)
+	// DryRun methods return what WOULD be deleted without actually deleting
+	RemoveContainerDryRun(ctx context.Context, id string) (ConfirmationInfo, error)
+	RemoveImageDryRun(ctx context.Context, id string) (ConfirmationInfo, error)
+	RemoveVolumeDryRun(ctx context.Context, name string) (ConfirmationInfo, error)
+	RemoveNetworkDryRun(ctx context.Context, id string) (ConfirmationInfo, error)
+	PruneContainersDryRun(ctx context.Context) (ConfirmationInfo, error)
+	PruneImagesDryRun(ctx context.Context, all bool) (ConfirmationInfo, error)
+	PruneVolumesDryRun(ctx context.Context) (ConfirmationInfo, error)
+	PruneNetworksDryRun(ctx context.Context) (ConfirmationInfo, error)
 }
