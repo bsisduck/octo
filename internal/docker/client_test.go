@@ -10,6 +10,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/volume"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -451,6 +452,15 @@ func TestRemoveContainer_PassesForceFlag(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var capturedForce bool
 			mock := &MockDockerAPI{
+				ContainerListFn: func(ctx context.Context, opts container.ListOptions) ([]types.Container, error) {
+					return []types.Container{
+						{
+							ID:    "test123",
+							Names: []string{"/test"},
+							State: "exited",
+						},
+					}, nil
+				},
 				ContainerRemoveFn: func(ctx context.Context, id string, opts container.RemoveOptions) error {
 					capturedForce = opts.Force
 					return nil
@@ -812,4 +822,97 @@ func TestTrimImageIDHelper(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+// TestStartContainer tests starting a container
+func TestStartContainer(t *testing.T) {
+	t.Run("successful_start", func(t *testing.T) {
+		mock := &MockDockerAPI{
+			ContainerStartFn: func(ctx context.Context, containerID string, options container.StartOptions) error {
+				assert.Equal(t, "test-container", containerID)
+				return nil
+			},
+		}
+
+		client := &Client{api: mock}
+		err := client.StartContainer(context.Background(), "test-container")
+
+		assert.NoError(t, err)
+	})
+
+	t.Run("start_error", func(t *testing.T) {
+		mock := &MockDockerAPI{
+			ContainerStartFn: func(ctx context.Context, containerID string, options container.StartOptions) error {
+				return errors.New("failed to start")
+			},
+		}
+
+		client := &Client{api: mock}
+		err := client.StartContainer(context.Background(), "test-container")
+
+		assert.Error(t, err)
+		assert.Equal(t, "failed to start", err.Error())
+	})
+}
+
+// TestStopContainer tests stopping a container
+func TestStopContainer(t *testing.T) {
+	t.Run("successful_stop", func(t *testing.T) {
+		mock := &MockDockerAPI{
+			ContainerStopFn: func(ctx context.Context, containerID string, options container.StopOptions) error {
+				assert.Equal(t, "test-container", containerID)
+				return nil
+			},
+		}
+
+		client := &Client{api: mock}
+		err := client.StopContainer(context.Background(), "test-container")
+
+		assert.NoError(t, err)
+	})
+
+	t.Run("stop_error", func(t *testing.T) {
+		mock := &MockDockerAPI{
+			ContainerStopFn: func(ctx context.Context, containerID string, options container.StopOptions) error {
+				return errors.New("permission denied")
+			},
+		}
+
+		client := &Client{api: mock}
+		err := client.StopContainer(context.Background(), "test-container")
+
+		assert.Error(t, err)
+		assert.Equal(t, "permission denied", err.Error())
+	})
+}
+
+// TestRestartContainer tests restarting a container
+func TestRestartContainer(t *testing.T) {
+	t.Run("successful_restart", func(t *testing.T) {
+		mock := &MockDockerAPI{
+			ContainerRestartFn: func(ctx context.Context, containerID string, options container.StopOptions) error {
+				assert.Equal(t, "test-container", containerID)
+				return nil
+			},
+		}
+
+		client := &Client{api: mock}
+		err := client.RestartContainer(context.Background(), "test-container")
+
+		assert.NoError(t, err)
+	})
+
+	t.Run("restart_error", func(t *testing.T) {
+		mock := &MockDockerAPI{
+			ContainerRestartFn: func(ctx context.Context, containerID string, options container.StopOptions) error {
+				return errors.New("container not found")
+			},
+		}
+
+		client := &Client{api: mock}
+		err := client.RestartContainer(context.Background(), "test-container")
+
+		assert.Error(t, err)
+		assert.Equal(t, "container not found", err.Error())
+	})
 }

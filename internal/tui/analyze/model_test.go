@@ -1,6 +1,7 @@
 package analyze
 
 import (
+	"context"
 	"testing"
 
 	"github.com/bsisduck/octo/internal/docker"
@@ -171,5 +172,153 @@ func TestAnalyze_ResourceTypeString(t *testing.T) {
 			assert.Equal(t, tt.expected, tt.rt.String())
 		})
 	}
+}
+
+// TestAnalyze_StartContainer_Success tests successful container start
+func TestAnalyze_StartContainer_Success(t *testing.T) {
+	startCalled := false
+
+	mock := &docker.MockDockerService{
+		StartContainerFn: func(ctx context.Context, id string) error {
+			startCalled = true
+			assert.Equal(t, "abc123", id)
+			return nil
+		},
+		ListContainersFn: func(ctx context.Context, all bool) ([]docker.ContainerInfo, error) {
+			return []docker.ContainerInfo{
+				{ID: "abc123", Name: "test-container", State: "running"},
+			}, nil
+		},
+	}
+
+	m := New(mock, Options{TypeFilter: "containers"})
+	m.entries = []ResourceEntry{
+		{
+			Type:       ResourceContainers,
+			ID:         "abc123",
+			Name:       "test-container",
+			Selectable: true,
+		},
+	}
+	m.selected = 0
+	m.loading = false
+
+	// Call the start command
+	cmd := m.startSelectedContainer()
+	assert.NotNil(t, cmd)
+
+	// Execute the command to verify it works
+	msg := cmd()
+	assert.NotNil(t, msg)
+	assert.True(t, startCalled)
+}
+
+// TestAnalyze_StopContainer_Error tests successful container stop
+func TestAnalyze_StopContainer_Error(t *testing.T) {
+	stopCalled := false
+
+	mock := &docker.MockDockerService{
+		StopContainerFn: func(ctx context.Context, id string) error {
+			stopCalled = true
+			return nil
+		},
+		ListContainersFn: func(ctx context.Context, all bool) ([]docker.ContainerInfo, error) {
+			return []docker.ContainerInfo{
+				{ID: "abc123", Name: "test-container", State: "exited"},
+			}, nil
+		},
+	}
+
+	m := New(mock, Options{TypeFilter: "containers"})
+	m.entries = []ResourceEntry{
+		{
+			Type:       ResourceContainers,
+			ID:         "abc123",
+			Name:       "test-container",
+			Selectable: true,
+		},
+	}
+	m.selected = 0
+	m.loading = false
+	m.warnings = []string{}
+
+	// Call the stop command
+	cmd := m.stopSelectedContainer()
+	assert.NotNil(t, cmd)
+
+	// Execute the command - it should call fetchResources which returns new data
+	msg := cmd()
+	// The command returns the result of fetchResources()()
+	assert.NotNil(t, msg)
+	assert.True(t, stopCalled)
+}
+
+// TestAnalyze_RestartContainer_Success tests successful container restart
+func TestAnalyze_RestartContainer_Success(t *testing.T) {
+	restartCalled := false
+
+	mock := &docker.MockDockerService{
+		RestartContainerFn: func(ctx context.Context, id string) error {
+			restartCalled = true
+			assert.Equal(t, "abc123", id)
+			return nil
+		},
+		ListContainersFn: func(ctx context.Context, all bool) ([]docker.ContainerInfo, error) {
+			return []docker.ContainerInfo{
+				{ID: "abc123", Name: "test-container", State: "running"},
+			}, nil
+		},
+	}
+
+	m := New(mock, Options{TypeFilter: "containers"})
+	m.entries = []ResourceEntry{
+		{
+			Type:       ResourceContainers,
+			ID:         "abc123",
+			Name:       "test-container",
+			Selectable: true,
+		},
+	}
+	m.selected = 0
+	m.loading = false
+
+	// Call the restart command
+	cmd := m.restartSelectedContainer()
+	assert.NotNil(t, cmd)
+
+	// Execute the command to verify it works
+	msg := cmd()
+	assert.NotNil(t, msg)
+	assert.True(t, restartCalled)
+}
+
+// TestAnalyze_CanOperateOnSelected tests the canOperateOnSelected helper
+func TestAnalyze_CanOperateOnSelected(t *testing.T) {
+	mock := &docker.MockDockerService{}
+	m := New(mock, Options{})
+
+	// No entries
+	assert.False(t, m.canOperateOnSelected())
+
+	// Add a non-selectable category
+	m.entries = []ResourceEntry{
+		{Type: ResourceContainers, Name: "Containers", IsCategory: true},
+	}
+	m.selected = 0
+	assert.False(t, m.canOperateOnSelected())
+
+	// Add a selectable container
+	m.entries = append(m.entries, ResourceEntry{
+		Type:       ResourceContainers,
+		ID:         "abc123",
+		Name:       "test",
+		Selectable: true,
+	})
+	m.selected = 1
+	assert.True(t, m.canOperateOnSelected())
+
+	// Out of bounds
+	m.selected = 10
+	assert.False(t, m.canOperateOnSelected())
 }
 
