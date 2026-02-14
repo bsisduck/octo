@@ -2,6 +2,8 @@ package docker
 
 import (
 	"context"
+	"io"
+	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -11,6 +13,8 @@ import (
 	"github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/api/types/volume"
 )
+
+var testTime = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 // Compile-time interface check
 var _ DockerService = (*MockDockerService)(nil)
@@ -49,6 +53,10 @@ type MockDockerService struct {
 	PruneImagesDryRunFn     func(ctx context.Context, all bool) (ConfirmationInfo, error)
 	PruneVolumesDryRunFn    func(ctx context.Context) (ConfirmationInfo, error)
 	PruneNetworksDryRunFn   func(ctx context.Context) (ConfirmationInfo, error)
+	GetContainerLogsFn     func(ctx context.Context, containerID string, tail int) ([]LogEntry, error)
+	StreamContainerLogsFn  func(ctx context.Context, containerID string) (<-chan LogEntry, <-chan error, func())
+	GetContainerStatsFn    func(ctx context.Context, containerID string) (*ContainerMetrics, error)
+	APIFn                  func() DockerAPI
 }
 
 func (m *MockDockerService) Ping(ctx context.Context) error {
@@ -268,6 +276,49 @@ func (m *MockDockerService) PruneNetworksDryRun(ctx context.Context) (Confirmati
 	return ConfirmationInfo{}, nil
 }
 
+func (m *MockDockerService) GetContainerLogs(ctx context.Context, containerID string, tail int) ([]LogEntry, error) {
+	if m.GetContainerLogsFn != nil {
+		return m.GetContainerLogsFn(ctx, containerID, tail)
+	}
+	return []LogEntry{
+		{Timestamp: testTime, Stream: "stdout", Content: "test log line 1"},
+		{Timestamp: testTime, Stream: "stdout", Content: "test log line 2"},
+		{Timestamp: testTime, Stream: "stderr", Content: "test error line"},
+	}, nil
+}
+
+func (m *MockDockerService) StreamContainerLogs(ctx context.Context, containerID string) (<-chan LogEntry, <-chan error, func()) {
+	if m.StreamContainerLogsFn != nil {
+		return m.StreamContainerLogsFn(ctx, containerID)
+	}
+	logCh := make(chan LogEntry, 2)
+	errCh := make(chan error)
+	logCh <- LogEntry{Timestamp: testTime, Stream: "stdout", Content: "stream line 1"}
+	logCh <- LogEntry{Timestamp: testTime, Stream: "stdout", Content: "stream line 2"}
+	close(logCh)
+	return logCh, errCh, func() {}
+}
+
+func (m *MockDockerService) GetContainerStats(ctx context.Context, containerID string) (*ContainerMetrics, error) {
+	if m.GetContainerStatsFn != nil {
+		return m.GetContainerStatsFn(ctx, containerID)
+	}
+	return &ContainerMetrics{
+		ContainerID:   containerID,
+		CPUPercent:    25.5,
+		MemoryUsage:   1024 * 1024 * 100,
+		MemoryLimit:   1024 * 1024 * 512,
+		MemoryPercent: 19.53,
+	}, nil
+}
+
+func (m *MockDockerService) API() DockerAPI {
+	if m.APIFn != nil {
+		return m.APIFn()
+	}
+	return &MockDockerAPI{}
+}
+
 // Compile-time interface check
 var _ DockerAPI = (*MockDockerAPI)(nil)
 
@@ -293,7 +344,14 @@ type MockDockerAPI struct {
 	ImagesPruneFn      func(ctx context.Context, pruneFilters filters.Args) (image.PruneReport, error)
 	VolumesPruneFn     func(ctx context.Context, pruneFilters filters.Args) (volume.PruneReport, error)
 	NetworksPruneFn    func(ctx context.Context, pruneFilters filters.Args) (network.PruneReport, error)
-	BuildCachePruneFn  func(ctx context.Context, opts types.BuildCachePruneOptions) (*types.BuildCachePruneReport, error)
+	BuildCachePruneFn          func(ctx context.Context, opts types.BuildCachePruneOptions) (*types.BuildCachePruneReport, error)
+	ContainerLogsFn            func(ctx context.Context, ctr string, options container.LogsOptions) (io.ReadCloser, error)
+	ContainerStatsOneShotFn    func(ctx context.Context, containerID string) (container.StatsResponseReader, error)
+	ContainerExecCreateFn      func(ctx context.Context, containerID string, options container.ExecOptions) (types.IDResponse, error)
+	ContainerExecAttachFn      func(ctx context.Context, execID string, config container.ExecAttachOptions) (types.HijackedResponse, error)
+	ContainerExecResizeFn      func(ctx context.Context, execID string, options container.ResizeOptions) error
+	ContainerExecInspectFn     func(ctx context.Context, execID string) (container.ExecInspect, error)
+	ContainerExecStartFn       func(ctx context.Context, execID string, config container.ExecStartOptions) error
 }
 
 func (m *MockDockerAPI) Ping(ctx context.Context) (types.Ping, error) {
@@ -434,4 +492,53 @@ func (m *MockDockerAPI) BuildCachePrune(ctx context.Context, opts types.BuildCac
 		return m.BuildCachePruneFn(ctx, opts)
 	}
 	return &types.BuildCachePruneReport{}, nil
+}
+
+func (m *MockDockerAPI) ContainerLogs(ctx context.Context, ctr string, options container.LogsOptions) (io.ReadCloser, error) {
+	if m.ContainerLogsFn != nil {
+		return m.ContainerLogsFn(ctx, ctr, options)
+	}
+	return io.NopCloser(io.LimitReader(nil, 0)), nil
+}
+
+func (m *MockDockerAPI) ContainerStatsOneShot(ctx context.Context, containerID string) (container.StatsResponseReader, error) {
+	if m.ContainerStatsOneShotFn != nil {
+		return m.ContainerStatsOneShotFn(ctx, containerID)
+	}
+	return container.StatsResponseReader{Body: io.NopCloser(io.LimitReader(nil, 0))}, nil
+}
+
+func (m *MockDockerAPI) ContainerExecCreate(ctx context.Context, containerID string, options container.ExecOptions) (types.IDResponse, error) {
+	if m.ContainerExecCreateFn != nil {
+		return m.ContainerExecCreateFn(ctx, containerID, options)
+	}
+	return types.IDResponse{ID: "mock-exec-id"}, nil
+}
+
+func (m *MockDockerAPI) ContainerExecAttach(ctx context.Context, execID string, config container.ExecAttachOptions) (types.HijackedResponse, error) {
+	if m.ContainerExecAttachFn != nil {
+		return m.ContainerExecAttachFn(ctx, execID, config)
+	}
+	return types.HijackedResponse{}, nil
+}
+
+func (m *MockDockerAPI) ContainerExecResize(ctx context.Context, execID string, options container.ResizeOptions) error {
+	if m.ContainerExecResizeFn != nil {
+		return m.ContainerExecResizeFn(ctx, execID, options)
+	}
+	return nil
+}
+
+func (m *MockDockerAPI) ContainerExecInspect(ctx context.Context, execID string) (container.ExecInspect, error) {
+	if m.ContainerExecInspectFn != nil {
+		return m.ContainerExecInspectFn(ctx, execID)
+	}
+	return container.ExecInspect{}, nil
+}
+
+func (m *MockDockerAPI) ContainerExecStart(ctx context.Context, execID string, config container.ExecStartOptions) error {
+	if m.ContainerExecStartFn != nil {
+		return m.ContainerExecStartFn(ctx, execID, config)
+	}
+	return nil
 }

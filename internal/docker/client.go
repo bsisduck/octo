@@ -1,8 +1,12 @@
 package docker
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -15,6 +19,7 @@ import (
 	"github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 )
 
 // Compile-time interface check
@@ -61,6 +66,11 @@ func NewClient() (*Client, error) {
 	}
 
 	return &Client{api: cli}, nil
+}
+
+// API returns the underlying DockerAPI for direct access (used by exec).
+func (c *Client) API() DockerAPI {
+	return c.api
 }
 
 // Ping returns nil if the Docker daemon is reachable.
@@ -780,6 +790,212 @@ func (c *Client) PruneBuildCache(ctx context.Context, all bool) (uint64, error) 
 		return 0, err
 	}
 	return report.SpaceReclaimed, nil
+}
+
+// GetContainerLogs fetches the last N lines of logs from a container.
+// Uses stdcopy to demultiplex stdout/stderr for non-TTY containers.
+func (c *Client) GetContainerLogs(ctx context.Context, containerID string, tail int) ([]LogEntry, error) {
+	opts := container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Timestamps: true,
+		Tail:       fmt.Sprintf("%d", tail),
+	}
+
+	reader, err := c.api.ContainerLogs(ctx, containerID, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get container logs: %w", err)
+	}
+	defer reader.Close()
+
+	// Demultiplex stdout and stderr using stdcopy
+	var stdoutBuf, stderrBuf bytes.Buffer
+	_, err = stdcopy.StdCopy(&stdoutBuf, &stderrBuf, reader)
+	if err != nil {
+		// If stdcopy fails, the container might use TTY mode.
+		// Re-fetch and read directly.
+		reader2, err2 := c.api.ContainerLogs(ctx, containerID, opts)
+		if err2 != nil {
+			return nil, fmt.Errorf("failed to re-fetch logs: %w", err2)
+		}
+		defer reader2.Close()
+		return parseLogLines(reader2, "stdout"), nil
+	}
+
+	var entries []LogEntry
+	entries = append(entries, parseLogLinesFromBytes(stdoutBuf.Bytes(), "stdout")...)
+	entries = append(entries, parseLogLinesFromBytes(stderrBuf.Bytes(), "stderr")...)
+
+	// Sort by timestamp
+	sortLogEntries(entries)
+	return entries, nil
+}
+
+// StreamContainerLogs streams live logs from a container.
+// Returns a channel of log entries, an error channel, and a cancel function.
+func (c *Client) StreamContainerLogs(ctx context.Context, containerID string) (<-chan LogEntry, <-chan error, func()) {
+	logCh := make(chan LogEntry, 100)
+	errCh := make(chan error, 1)
+	ctx, cancel := context.WithCancel(ctx)
+
+	go func() {
+		defer close(logCh)
+		defer close(errCh)
+
+		opts := container.LogsOptions{
+			ShowStdout: true,
+			ShowStderr: true,
+			Timestamps: true,
+			Follow:     true,
+			Tail:       "0", // Only new logs
+		}
+
+		reader, err := c.api.ContainerLogs(ctx, containerID, opts)
+		if err != nil {
+			errCh <- fmt.Errorf("failed to stream logs: %w", err)
+			return
+		}
+		defer reader.Close()
+
+		// Use a pipe to demux stdout/stderr
+		pr, pw := io.Pipe()
+		go func() {
+			_, err := stdcopy.StdCopy(pw, pw, reader)
+			if err != nil {
+				// TTY mode fallback: copy directly
+				pw.Close()
+				return
+			}
+			pw.Close()
+		}()
+
+		scanner := bufio.NewScanner(pr)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // 1MB max line
+		for scanner.Scan() {
+			line := scanner.Text()
+			entry := parseTimestampedLine(line, "stdout")
+			select {
+			case logCh <- entry:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	return logCh, errCh, cancel
+}
+
+// GetContainerStats returns real-time metrics for a container.
+func (c *Client) GetContainerStats(ctx context.Context, containerID string) (*ContainerMetrics, error) {
+	statsResp, err := c.api.ContainerStatsOneShot(ctx, containerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get container stats: %w", err)
+	}
+	defer statsResp.Body.Close()
+
+	var stats types.StatsJSON
+	if err := json.NewDecoder(statsResp.Body).Decode(&stats); err != nil {
+		return nil, fmt.Errorf("failed to decode stats: %w", err)
+	}
+
+	// Calculate CPU percentage using delta formula
+	cpuPercent := 0.0
+	cpuDelta := float64(stats.CPUStats.CPUUsage.TotalUsage - stats.PreCPUStats.CPUUsage.TotalUsage)
+	systemDelta := float64(stats.CPUStats.SystemUsage - stats.PreCPUStats.SystemUsage)
+	if systemDelta > 0 && cpuDelta > 0 {
+		onlineCPUs := float64(stats.CPUStats.OnlineCPUs)
+		if onlineCPUs == 0 {
+			onlineCPUs = float64(len(stats.CPUStats.CPUUsage.PercpuUsage))
+		}
+		if onlineCPUs > 0 {
+			cpuPercent = (cpuDelta / systemDelta) * onlineCPUs * 100.0
+		}
+	}
+
+	// Calculate memory
+	memUsage := stats.MemoryStats.Usage
+	memLimit := stats.MemoryStats.Limit
+	memPercent := 0.0
+	if memLimit > 0 {
+		memPercent = float64(memUsage) / float64(memLimit) * 100.0
+	}
+
+	// Calculate network I/O
+	var netRx, netTx uint64
+	for _, v := range stats.Networks {
+		netRx += v.RxBytes
+		netTx += v.TxBytes
+	}
+
+	// Calculate block I/O
+	var blockRead, blockWrite uint64
+	for _, bio := range stats.BlkioStats.IoServiceBytesRecursive {
+		switch bio.Op {
+		case "read", "Read":
+			blockRead += bio.Value
+		case "write", "Write":
+			blockWrite += bio.Value
+		}
+	}
+
+	return &ContainerMetrics{
+		ContainerID:   containerID,
+		CPUPercent:    cpuPercent,
+		MemoryUsage:   memUsage,
+		MemoryLimit:   memLimit,
+		MemoryPercent: memPercent,
+		NetworkRx:     netRx,
+		NetworkTx:     netTx,
+		BlockRead:     blockRead,
+		BlockWrite:    blockWrite,
+		PIDs:          stats.PidsStats.Current,
+	}, nil
+}
+
+// parseLogLines reads from a reader and creates log entries
+func parseLogLines(r io.Reader, stream string) []LogEntry {
+	var entries []LogEntry
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		entry := parseTimestampedLine(scanner.Text(), stream)
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
+// parseLogLinesFromBytes parses log lines from a byte slice
+func parseLogLinesFromBytes(data []byte, stream string) []LogEntry {
+	return parseLogLines(bytes.NewReader(data), stream)
+}
+
+// parseTimestampedLine parses a Docker log line with timestamp prefix
+func parseTimestampedLine(line, stream string) LogEntry {
+	// Docker timestamps format: 2006-01-02T15:04:05.999999999Z
+	// Try to parse timestamp from beginning of line
+	if len(line) > 30 {
+		if ts, err := time.Parse(time.RFC3339Nano, line[:30]); err == nil {
+			return LogEntry{Timestamp: ts, Stream: stream, Content: strings.TrimSpace(line[31:])}
+		}
+	}
+	// Try shorter timestamp formats
+	for _, tsLen := range []int{35, 30, 25, 20} {
+		if len(line) > tsLen {
+			if ts, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(line[:tsLen])); err == nil {
+				return LogEntry{Timestamp: ts, Stream: stream, Content: strings.TrimSpace(line[tsLen:])}
+			}
+		}
+	}
+	return LogEntry{Timestamp: time.Now(), Stream: stream, Content: line}
+}
+
+// sortLogEntries sorts log entries by timestamp
+func sortLogEntries(entries []LogEntry) {
+	for i := 1; i < len(entries); i++ {
+		for j := i; j > 0 && entries[j].Timestamp.Before(entries[j-1].Timestamp); j-- {
+			entries[j], entries[j-1] = entries[j-1], entries[j]
+		}
+	}
 }
 
 // Helper functions

@@ -1,6 +1,9 @@
 package docker
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 // ContainerInfo holds container details for display
 type ContainerInfo struct {
@@ -82,6 +85,64 @@ func (t SafetyTier) String() string {
 	default:
 		return "Unknown"
 	}
+}
+
+// LogEntry represents a single log line from a container
+type LogEntry struct {
+	Timestamp time.Time
+	Stream    string // "stdout" or "stderr"
+	Content   string
+}
+
+// ContainerMetrics holds real-time metrics for a container
+type ContainerMetrics struct {
+	ContainerID   string
+	CPUPercent    float64
+	MemoryUsage   uint64
+	MemoryLimit   uint64
+	MemoryPercent float64
+	NetworkRx     uint64
+	NetworkTx     uint64
+	BlockRead     uint64
+	BlockWrite    uint64
+	PIDs          uint64
+}
+
+// DiskUsageCache caches DiskUsage API results with TTL
+type DiskUsageCache struct {
+	mu        sync.Mutex
+	data      *DiskUsageInfo
+	fetchedAt time.Time
+	ttl       time.Duration
+}
+
+// NewDiskUsageCache creates a cache with the given TTL
+func NewDiskUsageCache(ttl time.Duration) *DiskUsageCache {
+	return &DiskUsageCache{ttl: ttl}
+}
+
+// Get returns cached data if still valid, or nil
+func (c *DiskUsageCache) Get() *DiskUsageInfo {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.data != nil && time.Since(c.fetchedAt) < c.ttl {
+		return c.data
+	}
+	return nil
+}
+
+// Set stores data in the cache
+func (c *DiskUsageCache) Set(data *DiskUsageInfo) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.data = data
+	c.fetchedAt = time.Now()
+}
+
+// ExecOptions configures an interactive exec session
+type ExecOptions struct {
+	ContainerID string
+	Shell       string // "/bin/sh" or "/bin/bash"
 }
 
 // ConfirmationInfo holds confirmation details for destructive operation
