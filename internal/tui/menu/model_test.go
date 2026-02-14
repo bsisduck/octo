@@ -3,6 +3,7 @@ package menu
 import (
 	"testing"
 
+	"github.com/bsisduck/octo/internal/docker"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/assert"
 )
@@ -111,5 +112,195 @@ func TestMenu_InitMsgUpdatesState(t *testing.T) {
 	assert.True(t, model.dockerOK)
 	assert.Equal(t, 5, model.containers)
 	assert.Equal(t, 3, model.running)
+}
+
+// initMenuWithDocker creates a menu model and sends InitMsg with Docker connected and disk usage
+func initMenuWithDocker() Model {
+	m := New()
+	msg := InitMsg{
+		DockerOK:   true,
+		DiskUsage:  &docker.DiskUsageInfo{Total: 1024, TotalReclaimable: 512},
+		Containers: 3,
+		Running:    1,
+		Images:     5,
+		Volumes:    2,
+	}
+	updated, _ := m.Update(msg)
+	return updated.(Model)
+}
+
+// TestMouseClickSelectsMenuItem tests that left-clicking on a menu item selects and executes it
+func TestMouseClickSelectsMenuItem(t *testing.T) {
+	m := initMenuWithDocker()
+
+	// headerHeight should be computed after InitMsg
+	assert.Greater(t, m.headerHeight, 0)
+
+	tests := []struct {
+		name           string
+		itemIdx        int
+		expectedAction string
+	}{
+		{"first item (Status)", 0, "status"},
+		{"second item (Analyze)", 1, "analyze"},
+		{"third item (Cleanup)", 2, "cleanup"},
+		{"fourth item (Prune)", 3, "prune"},
+		{"fifth item (Diagnose)", 4, "diagnose"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := initMenuWithDocker()
+			msg := tea.MouseMsg{
+				Action: tea.MouseActionPress,
+				Button: tea.MouseButtonLeft,
+				X:      10,
+				Y:      m.headerHeight + tt.itemIdx,
+			}
+
+			updated, cmd := m.Update(msg)
+			model := updated.(Model)
+
+			assert.Equal(t, tt.itemIdx, model.selected)
+			assert.Equal(t, tt.expectedAction, model.ChosenAction())
+			assert.NotNil(t, cmd, "should return tea.Quit command")
+		})
+	}
+}
+
+// TestMouseClickOutOfBoundsIgnored tests that clicking outside menu items is ignored
+func TestMouseClickOutOfBoundsIgnored(t *testing.T) {
+	m := initMenuWithDocker()
+
+	tests := []struct {
+		name string
+		y    int
+	}{
+		{"click on header area", m.headerHeight - 2},
+		{"click on line zero", 0},
+		{"click below all items", m.headerHeight + len(m.items)},
+		{"click far below", m.headerHeight + 100},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := initMenuWithDocker()
+			msg := tea.MouseMsg{
+				Action: tea.MouseActionPress,
+				Button: tea.MouseButtonLeft,
+				X:      10,
+				Y:      tt.y,
+			}
+
+			updated, cmd := m.Update(msg)
+			model := updated.(Model)
+
+			assert.Equal(t, 0, model.selected, "selection should not change")
+			assert.Empty(t, model.ChosenAction(), "no action should be chosen")
+			assert.Nil(t, cmd, "no quit command should be returned")
+		})
+	}
+}
+
+// TestMouseClickRightButtonIgnored tests that right-click does not select
+func TestMouseClickRightButtonIgnored(t *testing.T) {
+	m := initMenuWithDocker()
+
+	msg := tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonRight,
+		X:      10,
+		Y:      m.headerHeight + 1,
+	}
+
+	updated, cmd := m.Update(msg)
+	model := updated.(Model)
+
+	assert.Equal(t, 0, model.selected)
+	assert.Empty(t, model.ChosenAction())
+	assert.Nil(t, cmd)
+}
+
+// TestMouseReleaseIgnored tests that mouse release does not trigger selection
+func TestMouseReleaseIgnored(t *testing.T) {
+	m := initMenuWithDocker()
+
+	msg := tea.MouseMsg{
+		Action: tea.MouseActionRelease,
+		Button: tea.MouseButtonLeft,
+		X:      10,
+		Y:      m.headerHeight + 0,
+	}
+
+	updated, cmd := m.Update(msg)
+	model := updated.(Model)
+
+	assert.Equal(t, 0, model.selected)
+	assert.Empty(t, model.ChosenAction())
+	assert.Nil(t, cmd)
+}
+
+// TestMouseClickHeaderHeightWithoutDiskUsage tests header computation when no disk usage
+func TestMouseClickHeaderHeightWithoutDiskUsage(t *testing.T) {
+	m := New()
+
+	// InitMsg with docker OK but no disk usage
+	msg := InitMsg{
+		DockerOK:   true,
+		DiskUsage:  nil,
+		Containers: 0,
+		Running:    0,
+		Images:     0,
+		Volumes:    0,
+	}
+
+	updated, _ := m.Update(msg)
+	model := updated.(Model)
+
+	// Without disk usage or error, header is shorter
+	// logo(6) + tagline(1) + blanks(2) + commands title(1) = 10
+	assert.Equal(t, 10, model.headerHeight)
+
+	// Click on first item should still work
+	clickMsg := tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+		X:      10,
+		Y:      model.headerHeight + 0,
+	}
+
+	updated2, cmd := model.Update(clickMsg)
+	model2 := updated2.(Model)
+	assert.Equal(t, "status", model2.ChosenAction())
+	assert.NotNil(t, cmd)
+}
+
+// TestMouseClickHeaderHeightDockerNotConnected tests header computation when Docker is not connected
+func TestMouseClickHeaderHeightDockerNotConnected(t *testing.T) {
+	m := New()
+
+	msg := InitMsg{
+		DockerOK: false,
+		Err:      nil,
+	}
+
+	updated, _ := m.Update(msg)
+	model := updated.(Model)
+
+	// With docker not OK: logo(6) + tagline(1) + blanks(2) + error(2) + commands title(1) = 12
+	assert.Equal(t, 12, model.headerHeight)
+
+	// Click on first item
+	clickMsg := tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+		X:      10,
+		Y:      model.headerHeight + 0,
+	}
+
+	updated2, cmd := model.Update(clickMsg)
+	model2 := updated2.(Model)
+	assert.Equal(t, "status", model2.ChosenAction())
+	assert.NotNil(t, cmd)
 }
 

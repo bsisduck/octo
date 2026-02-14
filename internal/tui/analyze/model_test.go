@@ -2,6 +2,7 @@ package analyze
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/bsisduck/octo/internal/docker"
@@ -320,5 +321,233 @@ func TestAnalyze_CanOperateOnSelected(t *testing.T) {
 	// Out of bounds
 	m.selected = 10
 	assert.False(t, m.canOperateOnSelected())
+}
+
+// createAnalyzeModelWithEntries creates an analyze model with test entries
+func createAnalyzeModelWithEntries() Model {
+	mock := &docker.MockDockerService{}
+	m := New(mock, Options{})
+
+	entries := []ResourceEntry{
+		{Type: ResourceContainers, Name: "Containers", IsCategory: true},
+		{Type: ResourceContainers, ID: "c1", Name: "web-app", Selectable: true, Size: 1024},
+		{Type: ResourceContainers, ID: "c2", Name: "db-server", Selectable: true, Size: 2048},
+		{Type: ResourceImages, Name: "Images", IsCategory: true},
+		{Type: ResourceImages, ID: "i1", Name: "nginx:latest", Selectable: true, Size: 50000},
+		{Type: ResourceImages, ID: "i2", Name: "postgres:16", Selectable: true, Size: 80000},
+	}
+
+	msg := DataMsg{Entries: entries, Warnings: []string{}}
+	updated, _ := m.Update(msg)
+	model := updated.(Model)
+	model.height = 40 // Set a reasonable terminal height
+	model.width = 80
+	return model
+}
+
+// TestMouseClickSelectsEntry tests that left-clicking selects the correct entry in analyze view
+func TestMouseClickSelectsEntry(t *testing.T) {
+	// Header is 3 lines (title + separator + blank)
+	// Click on second visible entry (index 1 in entries, at Y=3+1=4)
+	tests := []struct {
+		name        string
+		clickY      int
+		expectedIdx int
+	}{
+		{"click on first entry (category)", 3, 0},
+		{"click on second entry (web-app)", 4, 1},
+		{"click on third entry (db-server)", 5, 2},
+		{"click on fourth entry (Images category)", 6, 3},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := createAnalyzeModelWithEntries()
+			msg := tea.MouseMsg{
+				Action: tea.MouseActionPress,
+				Button: tea.MouseButtonLeft,
+				X:      10,
+				Y:      tt.clickY,
+			}
+
+			updated, _ := m.Update(msg)
+			model := updated.(Model)
+
+			assert.Equal(t, tt.expectedIdx, model.selected)
+		})
+	}
+}
+
+// TestMouseClickWithScrollOffset tests mouse click accounting for scroll offset
+func TestMouseClickWithScrollOffset(t *testing.T) {
+	mock := &docker.MockDockerService{}
+	m := New(mock, Options{})
+
+	// Create many entries to force scrolling
+	var entries []ResourceEntry
+	for i := 0; i < 30; i++ {
+		entries = append(entries, ResourceEntry{
+			Type:       ResourceContainers,
+			ID:         fmt.Sprintf("c%d", i),
+			Name:       fmt.Sprintf("container-%d", i),
+			Selectable: true,
+		})
+	}
+
+	msg := DataMsg{Entries: entries, Warnings: []string{}}
+	updated, _ := m.Update(msg)
+	model := updated.(Model)
+	model.height = 20 // Small viewport to force scrolling
+	model.width = 80
+
+	// Simulate scrolling down by setting offset manually
+	model.offset = 10
+
+	// Click at Y=3 (first visible line after header)
+	// With offset=10, this should select entry at index 10
+	clickMsg := tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+		X:      10,
+		Y:      3, // header is 3 lines
+	}
+
+	updated2, _ := model.Update(clickMsg)
+	model2 := updated2.(Model)
+
+	// idx = Y(3) - headerLines(3) + offset(10) = 10
+	assert.Equal(t, 10, model2.selected)
+
+	// Click at Y=5 with same offset
+	model.offset = 10
+	clickMsg2 := tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+		X:      10,
+		Y:      5,
+	}
+
+	updated3, _ := model.Update(clickMsg2)
+	model3 := updated3.(Model)
+
+	// idx = Y(5) - headerLines(3) + offset(10) = 12
+	assert.Equal(t, 12, model3.selected)
+}
+
+// TestMouseClickDuringConfirmIgnored tests that clicks during confirmation dialog are ignored
+func TestMouseClickDuringConfirmIgnored(t *testing.T) {
+	m := createAnalyzeModelWithEntries()
+	m.deleteConfirm = true
+	m.deleteTarget = &ResourceEntry{
+		Type: ResourceContainers,
+		ID:   "c1",
+		Name: "web-app",
+	}
+	m.deleteConfirmInfo = &docker.ConfirmationInfo{
+		Title:       "Delete container",
+		Description: "This will remove the container",
+	}
+	originalSelected := m.selected
+
+	msg := tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+		X:      10,
+		Y:      5,
+	}
+
+	updated, _ := m.Update(msg)
+	model := updated.(Model)
+
+	assert.Equal(t, originalSelected, model.selected, "selection should not change during confirmation")
+	assert.True(t, model.deleteConfirm, "confirmation state should remain")
+}
+
+// TestMouseClickOnCategoryEntry tests that clicking on a category entry selects it without crash
+func TestMouseClickOnCategoryEntry(t *testing.T) {
+	m := createAnalyzeModelWithEntries()
+
+	// First entry is a category header at Y=3
+	msg := tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+		X:      10,
+		Y:      3, // header(3) + 0 = first entry (category)
+	}
+
+	updated, _ := m.Update(msg)
+	model := updated.(Model)
+
+	assert.Equal(t, 0, model.selected)
+	assert.True(t, model.entries[model.selected].IsCategory)
+}
+
+// TestMouseClickOutOfBoundsAnalyze tests that out-of-bounds clicks are ignored in analyze
+func TestMouseClickOutOfBoundsAnalyze(t *testing.T) {
+	m := createAnalyzeModelWithEntries()
+	originalSelected := m.selected
+
+	tests := []struct {
+		name string
+		y    int
+	}{
+		{"click on header", 0},
+		{"click on separator", 1},
+		{"click below all entries", 3 + len(m.entries) + 5},
+		{"negative index after offset calc", 2}, // Y=2 - 3 + 0 = -1
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := createAnalyzeModelWithEntries()
+			msg := tea.MouseMsg{
+				Action: tea.MouseActionPress,
+				Button: tea.MouseButtonLeft,
+				X:      10,
+				Y:      tt.y,
+			}
+
+			updated, _ := m.Update(msg)
+			model := updated.(Model)
+
+			assert.Equal(t, originalSelected, model.selected, "selection should not change for out-of-bounds click")
+		})
+	}
+}
+
+// TestMouseRightClickAnalyzeIgnored tests that right-click is ignored in analyze view
+func TestMouseRightClickAnalyzeIgnored(t *testing.T) {
+	m := createAnalyzeModelWithEntries()
+	originalSelected := m.selected
+
+	msg := tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonRight,
+		X:      10,
+		Y:      4, // valid position for an entry
+	}
+
+	updated, _ := m.Update(msg)
+	model := updated.(Model)
+
+	assert.Equal(t, originalSelected, model.selected)
+}
+
+// TestMouseReleaseAnalyzeIgnored tests that mouse release is ignored in analyze view
+func TestMouseReleaseAnalyzeIgnored(t *testing.T) {
+	m := createAnalyzeModelWithEntries()
+	originalSelected := m.selected
+
+	msg := tea.MouseMsg{
+		Action: tea.MouseActionRelease,
+		Button: tea.MouseButtonLeft,
+		X:      10,
+		Y:      4,
+	}
+
+	updated, _ := m.Update(msg)
+	model := updated.(Model)
+
+	assert.Equal(t, originalSelected, model.selected)
 }
 
