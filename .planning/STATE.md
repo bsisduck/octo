@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-06)
 
 **Core value:** Users can confidently manage their Docker environment without fear of accidentally destroying important resources -- every destructive action shows what will happen, asks for confirmation, and explains reversibility.
-**Current focus:** Phase 5 - Interactive Enhancements (mouse, clipboard)
+**Current focus:** Phase 5 complete. Next: Phase 6 - Container Shell/Exec
 
 ## Current Position
 
-Phase: 5 of 6 (Interactive Enhancements)
-Plan: 05-02 next (Clipboard Copy)
-Status: Active - 05-01 complete, 05-02 pending
-Last activity: 2026-02-14 -- 05-01 mouse click-to-select complete
+Phase: 5 of 6 (Interactive Enhancements) -- COMPLETE
+Plan: All plans in Phase 5 complete (05-01, 05-02)
+Status: Phase 5 complete, Phase 6 next
+Last activity: 2026-02-14 -- 05-02 clipboard copy and shell completions complete
 
-Progress: [####............] 29% (4/14 plans complete)
+Progress: [#####...........] 36% (5/14 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
-- Average duration: 5min
-- Total execution time: 20min
+- Total plans completed: 5
+- Average duration: 5.4min
+- Total execution time: 27min
 
 **By Phase:**
 
@@ -30,11 +30,11 @@ Progress: [####............] 29% (4/14 plans complete)
 | 01-critical-bug-fixes | 1/1 | 3min | 3min |
 | 02-architecture-foundation | 4/4 | 18min | 4.5min |
 | 03-core-container-operations-and-safety-system | 2/2 | 10min | 5min |
-| 05-interactive-enhancements | 1/2 | 7min | 7min |
+| 05-interactive-enhancements | 2/2 | 14min | 7min |
 
 **Recent Trend:**
-- Last 2 plans: 03-02 (safety confirmation system), 05-01 (mouse click-to-select)
-- Trend: TUI interaction features progressing smoothly, skipped Phase 4 blocker
+- Last 2 plans: 05-01 (mouse click-to-select), 05-02 (clipboard copy + shell completions)
+- Trend: Phase 5 complete in 2 plans, 14min total. Interactive enhancements shipped.
 
 *Updated after each plan completion*
 
@@ -62,6 +62,10 @@ Recent decisions affecting current work:
 - [05-01]: Used tea.MouseActionPress + tea.MouseButtonLeft (modern API) not deprecated tea.MouseLeft
 - [05-01]: Computed headerHeight in Update() InitMsg handler, not View(), since Bubble Tea models are value types
 - [05-01]: Analyze view uses fixed 3-line header + scroll offset for click coordinate mapping
+- [05-02]: Hand-rolled clipboard (~70 lines) over atotto/clipboard: zero deps, full Wayland support
+- [05-02]: Clipboard testable via package-level var overrides (goos, lookPath, getenv), not build tags
+- [05-02]: Cobra GenBashCompletionV2 (not v1) for reliable bash completion with descriptions
+- [05-02]: y-key clipboard in analyze view only; menu/status lack copyable resource details
 
 ### Pending Todos
 
@@ -77,6 +81,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 05-01-PLAN.md (mouse click-to-select). Phase 5 plan 2 (clipboard copy) is next.
+Stopped at: Completed 05-02-PLAN.md (clipboard copy + shell completions). Phase 5 fully complete.
 Resume file: None
-Next action: Execute 05-02-PLAN.md (clipboard copy support)
+Next action: Phase 6 (Container Shell/Exec) -- note Phase 4 blocker still active
