@@ -43,18 +43,22 @@ func (r ResourceType) String() string {
 
 // ResourceEntry represents a single resource item
 type ResourceEntry struct {
-	Type        ResourceType
-	ID          string
-	Name        string
-	Size        int64
-	Status      string
-	Created     time.Time
-	Extra       string
-	IsUnused    bool
-	IsDangling  bool
-	Selectable  bool
-	IsCategory  bool
-	CategoryIdx int
+	Type            ResourceType
+	ID              string
+	Name            string
+	Size            int64
+	Status          string
+	Created         time.Time
+	Extra           string
+	IsUnused        bool
+	IsDangling      bool
+	Selectable      bool
+	IsCategory      bool
+	CategoryIdx     int
+	ComposeProject  string // Compose project name (empty if not part of a project)
+	ComposeService  string // Compose service name
+	IsProjectHeader bool   // True if this entry is a Compose project group header
+	ProjectName     string // Project name for project header entries
 }
 
 // ClipboardText formats a human-readable string for clipboard copy.
@@ -75,6 +79,12 @@ func (e ResourceEntry) ClipboardText() string {
 	}
 	if e.Extra != "" {
 		parts = append(parts, fmt.Sprintf("Details: %s", e.Extra))
+	}
+	if e.ComposeProject != "" {
+		parts = append(parts, fmt.Sprintf("Compose Project: %s", e.ComposeProject))
+	}
+	if e.ComposeService != "" {
+		parts = append(parts, fmt.Sprintf("Compose Service: %s", e.ComposeService))
 	}
 	return strings.Join(parts, "\n")
 }
@@ -168,7 +178,46 @@ func (m Model) fetchResources() tea.Cmd {
 						IsCategory: true,
 					})
 				}
-				for _, c := range containers {
+
+				// Group by Compose project
+				groups, ungrouped := docker.GroupByComposeProject(containers)
+
+				// Add grouped containers
+				for _, group := range groups {
+					// Project header (selectable for project-level operations)
+					entries = append(entries, ResourceEntry{
+						Type:            ResourceContainers,
+						Name:            fmt.Sprintf("[%s] (%d containers)", group.ProjectName, len(group.Containers)),
+						IsProjectHeader: true,
+						ProjectName:     group.ProjectName,
+						Selectable:      true,
+					})
+					for _, c := range group.Containers {
+						if m.showDangling && c.State == "running" {
+							continue
+						}
+						serviceName := ""
+						if c.Labels != nil {
+							serviceName = c.Labels[docker.ComposeServiceLabel]
+						}
+						entries = append(entries, ResourceEntry{
+							Type:           ResourceContainers,
+							ID:             c.ID,
+							Name:           c.Name,
+							Size:           c.Size,
+							Status:         c.Status,
+							Created:        c.Created,
+							Extra:          c.Image,
+							IsUnused:       c.State != "running",
+							Selectable:     true,
+							ComposeProject: group.ProjectName,
+							ComposeService: serviceName,
+						})
+					}
+				}
+
+				// Add ungrouped containers
+				for _, c := range ungrouped {
 					if m.showDangling && c.State == "running" {
 						continue
 					}
@@ -349,21 +398,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		case "s":
-			if m.canOperateOnSelected() && m.selectedEntry().Type == ResourceContainers {
-				return m, m.startSelectedContainer()
+			if m.canOperateOnSelected() {
+				entry := m.selectedEntry()
+				if entry.IsProjectHeader {
+					return m, m.startComposeProject(entry.ProjectName)
+				} else if entry.Type == ResourceContainers {
+					return m, m.startSelectedContainer()
+				}
 			}
 		case "t":
-			if m.canOperateOnSelected() && m.selectedEntry().Type == ResourceContainers {
-				return m, m.stopSelectedContainer()
+			if m.canOperateOnSelected() {
+				entry := m.selectedEntry()
+				if entry.IsProjectHeader {
+					return m, m.stopComposeProject(entry.ProjectName)
+				} else if entry.Type == ResourceContainers {
+					return m, m.stopSelectedContainer()
+				}
 			}
 		case "r":
-			if m.canOperateOnSelected() && m.selectedEntry().Type == ResourceContainers {
-				return m, m.restartSelectedContainer()
-			} else {
-				// Only refresh if not operating on a container
-				if m.canOperateOnSelected() {
-					break
+			if m.canOperateOnSelected() {
+				entry := m.selectedEntry()
+				if entry.IsProjectHeader {
+					return m, m.restartComposeProject(entry.ProjectName)
+				} else if entry.Type == ResourceContainers {
+					return m, m.restartSelectedContainer()
 				}
+			} else {
 				m.loading = true
 				return m, m.fetchResources()
 			}
@@ -687,6 +747,42 @@ func (m Model) restartSelectedContainer() tea.Cmd {
 	}
 }
 
+func (m Model) startComposeProject(projectName string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), docker.TimeoutAction*3)
+		defer cancel()
+		_, err := m.docker.StartComposeProject(ctx, projectName)
+		if err != nil {
+			return DataMsg{Entries: m.entries, Warnings: append(m.warnings, fmt.Sprintf("Failed to start project %s: %v", projectName, err))}
+		}
+		return m.fetchResources()()
+	}
+}
+
+func (m Model) stopComposeProject(projectName string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), docker.TimeoutAction*3)
+		defer cancel()
+		_, err := m.docker.StopComposeProject(ctx, projectName)
+		if err != nil {
+			return DataMsg{Entries: m.entries, Warnings: append(m.warnings, fmt.Sprintf("Failed to stop project %s: %v", projectName, err))}
+		}
+		return m.fetchResources()()
+	}
+}
+
+func (m Model) restartComposeProject(projectName string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), docker.TimeoutAction*3)
+		defer cancel()
+		_, err := m.docker.RestartComposeProject(ctx, projectName)
+		if err != nil {
+			return DataMsg{Entries: m.entries, Warnings: append(m.warnings, fmt.Sprintf("Failed to restart project %s: %v", projectName, err))}
+		}
+		return m.fetchResources()()
+	}
+}
+
 func (m Model) View() string {
 	if m.err != nil {
 		return fmt.Sprintf("Error: %v\n\nPress 'q' to quit.", m.err)
@@ -727,10 +823,16 @@ func (m Model) View() string {
 
 		if entry.IsCategory {
 			line = styles.Section.Render(fmt.Sprintf("► %s", entry.Name))
+		} else if entry.IsProjectHeader {
+			line = styles.Section.Render(fmt.Sprintf("  [compose] %s", entry.Name))
 		} else {
 			name := entry.Name
-			if len(name) > 30 {
-				name = name[:27] + "..."
+			maxNameLen := 30
+			if entry.ComposeProject != "" {
+				maxNameLen = 26 // shorter to account for indent
+			}
+			if len(name) > maxNameLen {
+				name = name[:maxNameLen-3] + "..."
 			}
 
 			sizeStr := ""
@@ -749,7 +851,16 @@ func (m Model) View() string {
 				sizeStr = strings.Repeat(" ", sizeWidth-len(sizeStr)) + sizeStr
 			}
 
-			line = fmt.Sprintf("%-32s %s%s", name, styles.Label.Render(sizeStr), status)
+			if entry.ComposeProject != "" {
+				// Indent compose-grouped containers with service label
+				serviceLabel := ""
+				if entry.ComposeService != "" {
+					serviceLabel = fmt.Sprintf(" (%s)", entry.ComposeService)
+				}
+				line = fmt.Sprintf("    %-28s%s %s%s", name, serviceLabel, styles.Label.Render(sizeStr), status)
+			} else {
+				line = fmt.Sprintf("%-32s %s%s", name, styles.Label.Render(sizeStr), status)
+			}
 			line = styles.Normal.Render(line)
 		}
 
@@ -782,7 +893,7 @@ func (m Model) View() string {
 	b.WriteString("\n")
 	b.WriteString(strings.Repeat("─", 60))
 	b.WriteString("\n")
-	b.WriteString(styles.Help.Render("↑↓/jk/click: navigate | Enter: drill down | x: shell | y: copy | d: delete | r: refresh | q: quit"))
+	b.WriteString(styles.Help.Render("↑↓/jk/click: navigate | s/t/r: start/stop/restart (project or container) | x: shell | y: copy | d: delete | q: quit"))
 
 	return b.String()
 }
