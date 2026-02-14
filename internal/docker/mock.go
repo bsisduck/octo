@@ -22,24 +22,24 @@ var _ DockerService = (*MockDockerService)(nil)
 // MockDockerService is a hand-rolled mock implementation of DockerService.
 // Use it in tests by setting the function fields to return specific values.
 type MockDockerService struct {
-	PingFn                 func(ctx context.Context) error
-	CloseFn                func() error
-	GetServerInfoFn        func(ctx context.Context) (system.Info, error)
-	ListContainersFn       func(ctx context.Context, all bool) ([]ContainerInfo, error)
-	ListImagesFn           func(ctx context.Context, all bool) ([]ImageInfo, error)
-	ListVolumesFn          func(ctx context.Context) ([]VolumeInfo, error)
-	ListNetworksFn         func(ctx context.Context) ([]NetworkInfo, error)
-	GetDanglingImagesFn    func(ctx context.Context) ([]ImageInfo, error)
-	GetStoppedContainersFn func(ctx context.Context) ([]ContainerInfo, error)
-	GetUnusedVolumesFn     func(ctx context.Context) ([]VolumeInfo, error)
-	GetDiskUsageFn         func(ctx context.Context) (*DiskUsageInfo, error)
-	RemoveContainerFn      func(ctx context.Context, id string, force bool) error
-	RemoveImageFn          func(ctx context.Context, id string, force bool) error
-	RemoveVolumeFn         func(ctx context.Context, name string, force bool) error
-	RemoveNetworkFn        func(ctx context.Context, id string) error
-	StartContainerFn       func(ctx context.Context, id string) error
-	StopContainerFn        func(ctx context.Context, id string) error
-	RestartContainerFn     func(ctx context.Context, id string) error
+	PingFn                  func(ctx context.Context) error
+	CloseFn                 func() error
+	GetServerInfoFn         func(ctx context.Context) (system.Info, error)
+	ListContainersFn        func(ctx context.Context, all bool) ([]ContainerInfo, error)
+	ListImagesFn            func(ctx context.Context, all bool) ([]ImageInfo, error)
+	ListVolumesFn           func(ctx context.Context) ([]VolumeInfo, error)
+	ListNetworksFn          func(ctx context.Context) ([]NetworkInfo, error)
+	GetDanglingImagesFn     func(ctx context.Context) ([]ImageInfo, error)
+	GetStoppedContainersFn  func(ctx context.Context) ([]ContainerInfo, error)
+	GetUnusedVolumesFn      func(ctx context.Context) ([]VolumeInfo, error)
+	GetDiskUsageFn          func(ctx context.Context) (*DiskUsageInfo, error)
+	RemoveContainerFn       func(ctx context.Context, id string, force bool) error
+	RemoveImageFn           func(ctx context.Context, id string, force bool) error
+	RemoveVolumeFn          func(ctx context.Context, name string, force bool) error
+	RemoveNetworkFn         func(ctx context.Context, id string) error
+	StartContainerFn        func(ctx context.Context, id string) error
+	StopContainerFn         func(ctx context.Context, id string) error
+	RestartContainerFn      func(ctx context.Context, id string) error
 	PruneContainersFn       func(ctx context.Context) (uint64, error)
 	PruneImagesFn           func(ctx context.Context, all bool) (uint64, error)
 	PruneVolumesFn          func(ctx context.Context) (uint64, error)
@@ -53,10 +53,10 @@ type MockDockerService struct {
 	PruneImagesDryRunFn     func(ctx context.Context, all bool) (ConfirmationInfo, error)
 	PruneVolumesDryRunFn    func(ctx context.Context) (ConfirmationInfo, error)
 	PruneNetworksDryRunFn   func(ctx context.Context) (ConfirmationInfo, error)
-	GetContainerLogsFn     func(ctx context.Context, containerID string, tail int) ([]LogEntry, error)
-	StreamContainerLogsFn  func(ctx context.Context, containerID string) (<-chan LogEntry, <-chan error, func())
-	GetContainerStatsFn    func(ctx context.Context, containerID string) (*ContainerMetrics, error)
-	APIFn                  func() DockerAPI
+	GetContainerLogsFn      func(ctx context.Context, containerID string, tail int) ([]LogEntry, error)
+	StreamContainerLogsFn   func(ctx context.Context, containerID string) (<-chan LogEntry, <-chan error, func())
+	GetContainerStatsFn     func(ctx context.Context, containerID string) (*ContainerMetrics, error)
+	APIFn                   func() DockerAPI
 }
 
 func (m *MockDockerService) Ping(ctx context.Context) error {
@@ -325,33 +325,33 @@ var _ DockerAPI = (*MockDockerAPI)(nil)
 // MockDockerAPI is a hand-rolled mock implementation of DockerAPI.
 // Use it in tests to verify Client's data transformation logic.
 type MockDockerAPI struct {
-	PingFn             func(ctx context.Context) (types.Ping, error)
-	InfoFn             func(ctx context.Context) (system.Info, error)
-	CloseFn            func() error
-	ContainerListFn    func(ctx context.Context, options container.ListOptions) ([]types.Container, error)
-	ImageListFn        func(ctx context.Context, options image.ListOptions) ([]image.Summary, error)
-	VolumeListFn       func(ctx context.Context, options volume.ListOptions) (volume.ListResponse, error)
-	NetworkListFn      func(ctx context.Context, options network.ListOptions) ([]network.Summary, error)
-	DiskUsageFn        func(ctx context.Context, options types.DiskUsageOptions) (types.DiskUsage, error)
-	ContainerRemoveFn  func(ctx context.Context, containerID string, options container.RemoveOptions) error
-	ImageRemoveFn      func(ctx context.Context, imageID string, options image.RemoveOptions) ([]image.DeleteResponse, error)
-	VolumeRemoveFn     func(ctx context.Context, volumeID string, force bool) error
-	NetworkRemoveFn    func(ctx context.Context, networkID string) error
-	ContainerStartFn   func(ctx context.Context, containerID string, options container.StartOptions) error
-	ContainerStopFn    func(ctx context.Context, containerID string, options container.StopOptions) error
-	ContainerRestartFn func(ctx context.Context, containerID string, options container.StopOptions) error
-	ContainersPruneFn  func(ctx context.Context, pruneFilters filters.Args) (container.PruneReport, error)
-	ImagesPruneFn      func(ctx context.Context, pruneFilters filters.Args) (image.PruneReport, error)
-	VolumesPruneFn     func(ctx context.Context, pruneFilters filters.Args) (volume.PruneReport, error)
-	NetworksPruneFn    func(ctx context.Context, pruneFilters filters.Args) (network.PruneReport, error)
-	BuildCachePruneFn          func(ctx context.Context, opts types.BuildCachePruneOptions) (*types.BuildCachePruneReport, error)
-	ContainerLogsFn            func(ctx context.Context, ctr string, options container.LogsOptions) (io.ReadCloser, error)
-	ContainerStatsOneShotFn    func(ctx context.Context, containerID string) (container.StatsResponseReader, error)
-	ContainerExecCreateFn      func(ctx context.Context, containerID string, options container.ExecOptions) (types.IDResponse, error)
-	ContainerExecAttachFn      func(ctx context.Context, execID string, config container.ExecAttachOptions) (types.HijackedResponse, error)
-	ContainerExecResizeFn      func(ctx context.Context, execID string, options container.ResizeOptions) error
-	ContainerExecInspectFn     func(ctx context.Context, execID string) (container.ExecInspect, error)
-	ContainerExecStartFn       func(ctx context.Context, execID string, config container.ExecStartOptions) error
+	PingFn                  func(ctx context.Context) (types.Ping, error)
+	InfoFn                  func(ctx context.Context) (system.Info, error)
+	CloseFn                 func() error
+	ContainerListFn         func(ctx context.Context, options container.ListOptions) ([]types.Container, error)
+	ImageListFn             func(ctx context.Context, options image.ListOptions) ([]image.Summary, error)
+	VolumeListFn            func(ctx context.Context, options volume.ListOptions) (volume.ListResponse, error)
+	NetworkListFn           func(ctx context.Context, options network.ListOptions) ([]network.Summary, error)
+	DiskUsageFn             func(ctx context.Context, options types.DiskUsageOptions) (types.DiskUsage, error)
+	ContainerRemoveFn       func(ctx context.Context, containerID string, options container.RemoveOptions) error
+	ImageRemoveFn           func(ctx context.Context, imageID string, options image.RemoveOptions) ([]image.DeleteResponse, error)
+	VolumeRemoveFn          func(ctx context.Context, volumeID string, force bool) error
+	NetworkRemoveFn         func(ctx context.Context, networkID string) error
+	ContainerStartFn        func(ctx context.Context, containerID string, options container.StartOptions) error
+	ContainerStopFn         func(ctx context.Context, containerID string, options container.StopOptions) error
+	ContainerRestartFn      func(ctx context.Context, containerID string, options container.StopOptions) error
+	ContainersPruneFn       func(ctx context.Context, pruneFilters filters.Args) (container.PruneReport, error)
+	ImagesPruneFn           func(ctx context.Context, pruneFilters filters.Args) (image.PruneReport, error)
+	VolumesPruneFn          func(ctx context.Context, pruneFilters filters.Args) (volume.PruneReport, error)
+	NetworksPruneFn         func(ctx context.Context, pruneFilters filters.Args) (network.PruneReport, error)
+	BuildCachePruneFn       func(ctx context.Context, opts types.BuildCachePruneOptions) (*types.BuildCachePruneReport, error)
+	ContainerLogsFn         func(ctx context.Context, ctr string, options container.LogsOptions) (io.ReadCloser, error)
+	ContainerStatsOneShotFn func(ctx context.Context, containerID string) (container.StatsResponseReader, error)
+	ContainerExecCreateFn   func(ctx context.Context, containerID string, options container.ExecOptions) (types.IDResponse, error)
+	ContainerExecAttachFn   func(ctx context.Context, execID string, config container.ExecAttachOptions) (types.HijackedResponse, error)
+	ContainerExecResizeFn   func(ctx context.Context, execID string, options container.ResizeOptions) error
+	ContainerExecInspectFn  func(ctx context.Context, execID string) (container.ExecInspect, error)
+	ContainerExecStartFn    func(ctx context.Context, execID string, config container.ExecStartOptions) error
 }
 
 func (m *MockDockerAPI) Ping(ctx context.Context) (types.Ping, error) {

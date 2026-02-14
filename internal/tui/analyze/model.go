@@ -380,6 +380,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
+		case "x":
+			if m.canOperateOnSelected() && m.selectedEntry().Type == ResourceContainers {
+				if m.canExecOnSelected() {
+					entry := m.selectedEntry()
+					api := m.docker.API()
+					cmd := docker.NewDockerExecCommand(api, entry.ID, "/bin/sh")
+					return m, tea.Exec(cmd, func(err error) tea.Msg {
+						return common.ExecFinishedMsg{Err: err}
+					})
+				}
+				m.statusMessage = "Cannot exec: container is not running"
+				return m, tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
+					return common.ClearStatusMsg{}
+				})
+			}
 		}
 
 	case tea.MouseMsg:
@@ -449,6 +464,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case common.ClearStatusMsg:
 		m.statusMessage = ""
+
+	case common.ExecFinishedMsg:
+		if msg.Err != nil {
+			m.statusMessage = fmt.Sprintf("Shell exited with error: %v", msg.Err)
+		} else {
+			m.statusMessage = "Shell session ended"
+		}
+		// Refresh data -- container state may have changed during exec
+		m.loading = true
+		return m, tea.Batch(
+			m.fetchResources(),
+			tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
+				return common.ClearStatusMsg{}
+			}),
+		)
 	}
 
 	return m, nil
@@ -578,6 +608,15 @@ func (m Model) deleteResource() tea.Cmd {
 // canOperateOnSelected checks if we can operate on the currently selected entry.
 func (m *Model) canOperateOnSelected() bool {
 	return m.selected < len(m.entries) && m.entries[m.selected].Selectable && !m.entries[m.selected].IsCategory
+}
+
+// canExecOnSelected checks if exec is possible on the selected container (must be running).
+func (m *Model) canExecOnSelected() bool {
+	if !m.canOperateOnSelected() {
+		return false
+	}
+	entry := m.selectedEntry()
+	return entry.Type == ResourceContainers && !entry.IsUnused
 }
 
 // selectedEntry returns the currently selected entry.
@@ -743,7 +782,7 @@ func (m Model) View() string {
 	b.WriteString("\n")
 	b.WriteString(strings.Repeat("─", 60))
 	b.WriteString("\n")
-	b.WriteString(styles.Help.Render("↑↓/jk/click: navigate | Enter: drill down | y: copy | d: delete | r: refresh | q: quit"))
+	b.WriteString(styles.Help.Render("↑↓/jk/click: navigate | Enter: drill down | x: shell | y: copy | d: delete | r: refresh | q: quit"))
 
 	return b.String()
 }

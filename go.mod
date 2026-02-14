@@ -3,6 +3,7 @@ module github.com/bsisduck/octo
 go 1.24.2
 
 require (
+	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d
 	github.com/charmbracelet/bubbletea v1.3.4
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/docker/docker v27.5.1+incompatible
@@ -10,11 +11,12 @@ require (
 	github.com/muesli/termenv v0.16.0
 	github.com/spf13/cobra v1.8.1
 	github.com/stretchr/testify v1.11.1
+	golang.org/x/term v0.40.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/colorprofile v0.4.1 // indirect
 	github.com/charmbracelet/x/ansi v0.11.4 // indirect
@@ -59,9 +61,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.33.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
-	golang.org/x/term v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gotest.tools/v3 v3.5.1 // indirect
 )

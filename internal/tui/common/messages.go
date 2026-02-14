@@ -17,3 +17,8 @@ type ClipboardMsg struct {
 
 // ClearStatusMsg signals that the status message should be cleared
 type ClearStatusMsg struct{}
+
+// ExecFinishedMsg reports that a container exec session has ended
+type ExecFinishedMsg struct {
+	Err error
+}
