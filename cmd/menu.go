@@ -18,7 +18,7 @@ type InteractiveMenu struct {
 // Run starts the interactive menu and returns the chosen action.
 // Returns an empty string if the user quit without selecting.
 func (m *InteractiveMenu) Run() (string, error) {
-	p := tea.NewProgram(menu.New(), tea.WithAltScreen())
+	p := tea.NewProgram(menu.New(), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	m.program = p
 	finalModel, err := p.Run()
 	if err != nil {

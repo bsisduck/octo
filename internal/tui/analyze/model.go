@@ -344,6 +344,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case tea.MouseMsg:
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			if !m.deleteConfirm { // Don't process clicks during confirmation
+				headerLines := 3 // title + separator + blank
+				idx := msg.Y - headerLines + m.offset
+				if idx >= 0 && idx < len(m.entries) {
+					m.selected = idx
+					// Adjust viewport to follow selection
+					viewport := m.height - 12
+					if viewport < 5 {
+						viewport = 5
+					}
+					if m.selected < m.offset {
+						m.offset = m.selected
+					}
+					if m.selected >= m.offset+viewport {
+						m.offset = m.selected - viewport + 1
+					}
+				}
+			}
+		}
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -664,7 +686,7 @@ func (m Model) View() string {
 	b.WriteString("\n")
 	b.WriteString(strings.Repeat("─", 60))
 	b.WriteString("\n")
-	b.WriteString(styles.Help.Render("↑↓/jk: navigate | Enter: drill down | d: delete | r: refresh | q: quit"))
+	b.WriteString(styles.Help.Render("↑↓/jk/click: navigate | Enter: drill down | d: delete | r: refresh | q: quit"))
 
 	return b.String()
 }

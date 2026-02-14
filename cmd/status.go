@@ -38,7 +38,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 	if watch {
 		model := status.New(client, true)
-		p := tea.NewProgram(model, tea.WithAltScreen())
+		p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 		if _, err := p.Run(); err != nil {
 			return fmt.Errorf("running status: %w", err)
 		}

@@ -17,6 +17,7 @@ type Model struct {
 	items        []item
 	width        int
 	height       int
+	headerHeight int
 	err          error
 	dockerOK     bool
 	diskUsage    *docker.DiskUsageInfo
@@ -97,8 +98,39 @@ func (m Model) Init() tea.Cmd {
 	}
 }
 
+func (m Model) computeHeaderHeight() int {
+	h := 0
+	h += 6 // logo (5 lines of ASCII art + leading newline = 6 rendered lines)
+	h += 1 // tagline
+	h += 2 // two blank lines (\n after logo, \n\n after tagline)
+
+	if !m.dockerOK {
+		h += 2 // error line + blank
+	} else if m.diskUsage != nil {
+		h += 1 // "Quick Stats" title
+		h += 4 // containers, images, volumes, disk used
+		if m.diskUsage.TotalReclaimable > 0 {
+			h += 1 // reclaimable line
+		}
+		h += 1 // blank line after stats
+	}
+
+	h += 1 // "Commands" title
+	return h
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.MouseMsg:
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			idx := msg.Y - m.headerHeight
+			if idx >= 0 && idx < len(m.items) {
+				m.selected = idx
+				m.chosenAction = m.items[idx].action
+				return m, tea.Quit
+			}
+		}
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c", "esc":
@@ -156,6 +188,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.running = msg.Running
 		m.images = msg.Images
 		m.volumes = msg.Volumes
+		m.headerHeight = m.computeHeaderHeight()
 	}
 
 	return m, nil
@@ -231,7 +264,7 @@ func (m Model) View() string {
 	b.WriteString("\n")
 	b.WriteString(strings.Repeat("─", 50))
 	b.WriteString("\n")
-	b.WriteString(styles.Help.Render("  ↑↓/jk: navigate | Enter: select | v: version | q: quit"))
+	b.WriteString(styles.Help.Render("  ↑↓/jk/click: navigate | Enter/1-5: select | v: version | q: quit"))
 	b.WriteString("\n")
 
 	// Note about using commands directly

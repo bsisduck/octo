@@ -40,7 +40,7 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 		Dangling:   dangling,
 	})
 
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("running analyze: %w", err)
 	}
