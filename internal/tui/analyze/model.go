@@ -7,7 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bsisduck/octo/internal/clipboard"
 	"github.com/bsisduck/octo/internal/docker"
+	"github.com/bsisduck/octo/internal/tui/common"
 	"github.com/bsisduck/octo/internal/ui/format"
 	"github.com/bsisduck/octo/internal/ui/styles"
 	tea "github.com/charmbracelet/bubbletea"
@@ -55,21 +57,44 @@ type ResourceEntry struct {
 	CategoryIdx int
 }
 
+// ClipboardText formats a human-readable string for clipboard copy.
+func (e ResourceEntry) ClipboardText() string {
+	var parts []string
+	parts = append(parts, fmt.Sprintf("Type: %s", e.Type.String()))
+	if e.Name != "" {
+		parts = append(parts, fmt.Sprintf("Name: %s", e.Name))
+	}
+	if e.ID != "" {
+		parts = append(parts, fmt.Sprintf("ID: %s", e.ID))
+	}
+	if e.Size > 0 {
+		parts = append(parts, fmt.Sprintf("Size: %s", format.Size(uint64(e.Size))))
+	}
+	if e.Status != "" {
+		parts = append(parts, fmt.Sprintf("Status: %s", e.Status))
+	}
+	if e.Extra != "" {
+		parts = append(parts, fmt.Sprintf("Details: %s", e.Extra))
+	}
+	return strings.Join(parts, "\n")
+}
+
 type Model struct {
-	docker              docker.DockerService
-	entries             []ResourceEntry
-	selected            int
-	offset              int
-	width               int
-	height              int
-	err                 error
-	loading             bool
-	filterType          ResourceType
-	showDangling        bool
-	deleteConfirm       bool
-	deleteTarget        *ResourceEntry
-	deleteConfirmInfo   *docker.ConfirmationInfo
-	warnings            []string
+	docker            docker.DockerService
+	entries           []ResourceEntry
+	selected          int
+	offset            int
+	width             int
+	height            int
+	err               error
+	loading           bool
+	filterType        ResourceType
+	showDangling      bool
+	deleteConfirm     bool
+	deleteTarget      *ResourceEntry
+	deleteConfirmInfo *docker.ConfirmationInfo
+	warnings          []string
+	statusMessage     string
 }
 
 type DataMsg struct {
@@ -342,6 +367,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loading = true
 				return m, m.fetchResources()
 			}
+		case "y":
+			if m.canOperateOnSelected() {
+				entry := m.selectedEntry()
+				text := entry.ClipboardText()
+				return m, func() tea.Msg {
+					err := clipboard.Copy(text)
+					return common.ClipboardMsg{
+						Success: err == nil,
+						Text:    text,
+						Err:     err,
+					}
+				}
+			}
 		}
 
 	case tea.MouseMsg:
@@ -398,6 +436,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.deleteConfirmInfo = msg.Info
 			m.deleteConfirm = true
 		}
+
+	case common.ClipboardMsg:
+		if msg.Success {
+			m.statusMessage = "Copied to clipboard"
+		} else {
+			m.statusMessage = fmt.Sprintf("Clipboard: %v", msg.Err)
+		}
+		return m, tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
+			return common.ClearStatusMsg{}
+		})
+
+	case common.ClearStatusMsg:
+		m.statusMessage = ""
 	}
 
 	return m, nil
@@ -682,11 +733,17 @@ func (m Model) View() string {
 		}
 	}
 
+	// Status message
+	if m.statusMessage != "" {
+		b.WriteString("\n")
+		b.WriteString(styles.Info.Render("  " + m.statusMessage))
+	}
+
 	// Footer
 	b.WriteString("\n")
 	b.WriteString(strings.Repeat("─", 60))
 	b.WriteString("\n")
-	b.WriteString(styles.Help.Render("↑↓/jk/click: navigate | Enter: drill down | d: delete | r: refresh | q: quit"))
+	b.WriteString(styles.Help.Render("↑↓/jk/click: navigate | Enter: drill down | y: copy | d: delete | r: refresh | q: quit"))
 
 	return b.String()
 }

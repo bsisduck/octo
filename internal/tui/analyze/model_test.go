@@ -2,12 +2,15 @@ package analyze
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
 	"github.com/bsisduck/octo/internal/docker"
+	"github.com/bsisduck/octo/internal/tui/common"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestAnalyze_NewCreatesModel tests New creates a model
@@ -549,5 +552,147 @@ func TestMouseReleaseAnalyzeIgnored(t *testing.T) {
 	model := updated.(Model)
 
 	assert.Equal(t, originalSelected, model.selected)
+}
+
+// TestYKeyCopyTriggersClipboard tests that pressing y on a selected entry dispatches a clipboard command
+func TestYKeyCopyTriggersClipboard(t *testing.T) {
+	m := createAnalyzeModelWithEntries()
+	// Select a non-category entry (index 1 = "web-app" container)
+	m.selected = 1
+
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}
+	_, cmd := m.Update(msg)
+
+	require.NotNil(t, cmd, "y key on selectable entry should return a clipboard tea.Cmd")
+
+	// Execute the Cmd and verify it returns a ClipboardMsg
+	result := cmd()
+	clipMsg, ok := result.(common.ClipboardMsg)
+	require.True(t, ok, "clipboard command should return common.ClipboardMsg, got %T", result)
+	// The copy itself may fail (no clipboard tool in test environment), but the message type is correct
+	assert.NotEmpty(t, clipMsg.Text)
+}
+
+// TestYKeyOnCategoryIgnored tests that pressing y on a category entry does nothing
+func TestYKeyOnCategoryIgnored(t *testing.T) {
+	m := createAnalyzeModelWithEntries()
+	// Select the category entry (index 0 = "Containers" category)
+	m.selected = 0
+
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}
+	_, cmd := m.Update(msg)
+
+	assert.Nil(t, cmd, "y key on category should not dispatch a clipboard command")
+}
+
+// TestClipboardMsgSuccess tests that a successful ClipboardMsg sets the status message
+func TestClipboardMsgSuccess(t *testing.T) {
+	m := createAnalyzeModelWithEntries()
+
+	msg := common.ClipboardMsg{
+		Success: true,
+		Text:    "some copied text",
+		Err:     nil,
+	}
+
+	updated, cmd := m.Update(msg)
+	model := updated.(Model)
+
+	assert.Equal(t, "Copied to clipboard", model.statusMessage)
+	assert.NotNil(t, cmd, "should return a tick command for clearing status")
+}
+
+// TestClipboardMsgFailure tests that a failed ClipboardMsg shows the error in status
+func TestClipboardMsgFailure(t *testing.T) {
+	m := createAnalyzeModelWithEntries()
+
+	msg := common.ClipboardMsg{
+		Success: false,
+		Text:    "some text",
+		Err:     errors.New("no clipboard tool found"),
+	}
+
+	updated, cmd := m.Update(msg)
+	model := updated.(Model)
+
+	assert.Contains(t, model.statusMessage, "no clipboard tool found")
+	assert.NotNil(t, cmd, "should return a tick command for clearing status")
+}
+
+// TestClearStatusMsg tests that ClearStatusMsg clears the status message
+func TestClearStatusMsg(t *testing.T) {
+	m := createAnalyzeModelWithEntries()
+	m.statusMessage = "Copied to clipboard"
+
+	msg := common.ClearStatusMsg{}
+	updated, _ := m.Update(msg)
+	model := updated.(Model)
+
+	assert.Empty(t, model.statusMessage)
+}
+
+// TestClipboardTextFormatting tests that ClipboardText produces human-readable output
+func TestClipboardTextFormatting(t *testing.T) {
+	tests := []struct {
+		name     string
+		entry    ResourceEntry
+		contains []string
+	}{
+		{
+			name: "container with all fields",
+			entry: ResourceEntry{
+				Type:   ResourceContainers,
+				Name:   "web-app",
+				ID:     "abc123def456",
+				Size:   1048576, // 1 MB
+				Status: "running",
+				Extra:  "nginx:latest",
+			},
+			contains: []string{
+				"Type: Containers",
+				"Name: web-app",
+				"ID: abc123def456",
+				"Status: running",
+				"Details: nginx:latest",
+			},
+		},
+		{
+			name: "image with size only",
+			entry: ResourceEntry{
+				Type: ResourceImages,
+				Name: "nginx:latest",
+				ID:   "sha256:abc",
+				Size: 52428800, // 50 MB
+			},
+			contains: []string{
+				"Type: Images",
+				"Name: nginx:latest",
+				"ID: sha256:abc",
+			},
+		},
+		{
+			name: "minimal entry",
+			entry: ResourceEntry{
+				Type: ResourceVolumes,
+				Name: "my-volume",
+			},
+			contains: []string{
+				"Type: Volumes",
+				"Name: my-volume",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			text := tt.entry.ClipboardText()
+			for _, expected := range tt.contains {
+				assert.Contains(t, text, expected)
+			}
+			// Verify it's NOT Go struct format
+			assert.NotContains(t, text, "{")
+			assert.NotContains(t, text, "}")
+		})
+	}
 }
 
