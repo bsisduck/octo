@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-06)
 
 **Core value:** Users can confidently manage their Docker environment without fear of accidentally destroying important resources -- every destructive action shows what will happen, asks for confirmation, and explains reversibility.
-**Current focus:** Phase 5 complete. Next: Phase 6 - Container Shell/Exec
+**Current focus:** Phase 6 in progress. Plan 06-01 (exec/shell) complete, Plan 06-02 (compose awareness) next.
 
 ## Current Position
 
-Phase: 5 of 6 (Interactive Enhancements) -- COMPLETE
-Plan: All plans in Phase 5 complete (05-01, 05-02)
-Status: Phase 5 complete, Phase 6 next
-Last activity: 2026-02-14 -- 05-02 clipboard copy and shell completions complete
+Phase: 6 of 6 (Advanced Features) -- IN PROGRESS
+Plan: 1 of 2 in Phase 6 complete (06-01)
+Status: Phase 6 Plan 1 complete, Plan 2 next
+Last activity: 2026-02-14 -- 06-01 container exec/shell complete
 
-Progress: [#####...........] 36% (5/14 plans complete)
+Progress: [######..........] 43% (6/14 plans complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
-- Average duration: 5.4min
-- Total execution time: 27min
+- Total plans completed: 6
+- Average duration: 5.3min
+- Total execution time: 32min
 
 **By Phase:**
 
@@ -31,10 +31,11 @@ Progress: [#####...........] 36% (5/14 plans complete)
 | 02-architecture-foundation | 4/4 | 18min | 4.5min |
 | 03-core-container-operations-and-safety-system | 2/2 | 10min | 5min |
 | 05-interactive-enhancements | 2/2 | 14min | 7min |
+| 06-advanced-features | 1/2 | 5min | 5min |
 
 **Recent Trend:**
-- Last 2 plans: 05-01 (mouse click-to-select), 05-02 (clipboard copy + shell completions)
-- Trend: Phase 5 complete in 2 plans, 14min total. Interactive enhancements shipped.
+- Last 2 plans: 05-02 (clipboard copy + shell completions), 06-01 (container exec/shell)
+- Trend: Phase 6 started. Exec/shell feature (highest complexity R26) completed in 5min, well under budgeted 2-3x estimate.
 
 *Updated after each plan completion*
 
@@ -66,6 +67,10 @@ Recent decisions affecting current work:
 - [05-02]: Clipboard testable via package-level var overrides (goos, lookPath, getenv), not build tags
 - [05-02]: Cobra GenBashCompletionV2 (not v1) for reliable bash completion with descriptions
 - [05-02]: y-key clipboard in analyze view only; menu/status lack copyable resource details
+- [06-01]: DockerExecCommand takes DockerAPI directly, not DockerService -- exec needs raw SDK calls
+- [06-01]: API() accessor on DockerService to expose DockerAPI for exec without breaking abstraction
+- [06-01]: Platform-specific build tags only for SIGWINCH signal registration (resize_unix.go/resize_windows.go)
+- [06-01]: No timeout on exec sessions -- interactive with no predictable duration; only setup uses TimeoutExecCreate
 
 ### Pending Todos
 
@@ -76,11 +81,11 @@ None.
 - [Phase 4 BLOCKER]: golangci-lint formatter aggressively rewrites interface.go, removing interface method additions before they can be compiled. Interface changes don't persist through format cycles. Affects: ContainerLogs, GetContainerLogs, StreamContainerLogs methods.
 - [Phase 4]: Bubbles viewport compatibility with Bubble Tea v1.3.4 needs verification
 - [Phase 5 RESOLVED]: Bubble Tea v1.3.4 mouse API verified: MouseActionPress, MouseButtonLeft, MouseMsg with X/Y/Action/Button fields
-- [Phase 6]: Container exec PTY complexity budgeted at 2-3x normal estimates
+- [Phase 6 RESOLVED]: Container exec PTY complexity budgeted at 2-3x normal estimates -- completed in 5min, well under budget
 
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 05-02-PLAN.md (clipboard copy + shell completions). Phase 5 fully complete.
+Stopped at: Completed 06-01-PLAN.md (container exec/shell). Phase 6 Plan 1 complete.
 Resume file: None
-Next action: Phase 6 (Container Shell/Exec) -- note Phase 4 blocker still active
+Next action: Phase 6 Plan 2 (Compose Awareness) -- note Phase 4 blocker still active
