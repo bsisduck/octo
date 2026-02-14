@@ -334,9 +334,9 @@ func TestListImages_HandlesShortImageIDs(t *testing.T) {
 // TestListImages_ParsesRepoAndTag tests repo:tag parsing
 func TestListImages_ParsesRepoAndTag(t *testing.T) {
 	tests := []struct {
-		tag      string
-		expRepo  string
-		expTag   string
+		tag     string
+		expRepo string
+		expTag  string
 	}{
 		{"nginx:latest", "nginx", "latest"},
 		{"golang:1.24", "golang", "1.24"},
@@ -1011,9 +1011,9 @@ func TestRemoveImageDryRun(t *testing.T) {
 		ImageListFn: func(ctx context.Context, opts image.ListOptions) ([]image.Summary, error) {
 			return []image.Summary{
 				{
-					ID:        "sha256:abcdef1234567890abcdef1234567890",
-					RepoTags:  []string{"nginx:latest"},
-					Size:      123456,
+					ID:         "sha256:abcdef1234567890abcdef1234567890",
+					RepoTags:   []string{"nginx:latest"},
+					Size:       123456,
 					Containers: 0,
 				},
 			}, nil
@@ -1082,4 +1082,317 @@ func TestPruneContainersDryRun(t *testing.T) {
 	assert.Equal(t, TierBulkDestructive, info.Tier)
 	assert.Contains(t, info.Title, "Prune")
 	assert.True(t, len(info.Warnings) > 0)
+}
+
+// TestGroupByComposeProject tests grouping containers by Compose project
+func TestGroupByComposeProject(t *testing.T) {
+	t.Run("mixed_compose_and_standalone", func(t *testing.T) {
+		containers := []ContainerInfo{
+			{
+				ID:   "aaa111",
+				Name: "myapp-web-1",
+				Labels: map[string]string{
+					ComposeProjectLabel: "myapp",
+					ComposeServiceLabel: "web",
+				},
+			},
+			{
+				ID:   "bbb222",
+				Name: "myapp-db-1",
+				Labels: map[string]string{
+					ComposeProjectLabel: "myapp",
+					ComposeServiceLabel: "db",
+				},
+			},
+			{
+				ID:     "ccc333",
+				Name:   "standalone",
+				Labels: map[string]string{"some-other": "label"},
+			},
+			{
+				ID:   "ddd444",
+				Name: "other-web-1",
+				Labels: map[string]string{
+					ComposeProjectLabel: "other",
+					ComposeServiceLabel: "web",
+				},
+			},
+		}
+
+		groups, ungrouped := GroupByComposeProject(containers)
+
+		assert.Len(t, groups, 2)
+		assert.Len(t, ungrouped, 1)
+
+		// Groups should be sorted alphabetically
+		assert.Equal(t, "myapp", groups[0].ProjectName)
+		assert.Equal(t, "other", groups[1].ProjectName)
+
+		// myapp group should have 2 containers
+		assert.Len(t, groups[0].Containers, 2)
+
+		// other group should have 1 container
+		assert.Len(t, groups[1].Containers, 1)
+
+		// Ungrouped should have standalone
+		assert.Equal(t, "standalone", ungrouped[0].Name)
+	})
+
+	t.Run("nil_labels_safe", func(t *testing.T) {
+		containers := []ContainerInfo{
+			{ID: "aaa", Name: "no-labels", Labels: nil},
+			{ID: "bbb", Name: "empty-labels", Labels: map[string]string{}},
+		}
+
+		groups, ungrouped := GroupByComposeProject(containers)
+
+		assert.Len(t, groups, 0)
+		assert.Len(t, ungrouped, 2)
+	})
+
+	t.Run("empty_project_label", func(t *testing.T) {
+		containers := []ContainerInfo{
+			{
+				ID:     "aaa",
+				Name:   "empty-project",
+				Labels: map[string]string{ComposeProjectLabel: ""},
+			},
+		}
+
+		groups, ungrouped := GroupByComposeProject(containers)
+
+		assert.Len(t, groups, 0)
+		assert.Len(t, ungrouped, 1)
+	})
+
+	t.Run("all_compose", func(t *testing.T) {
+		containers := []ContainerInfo{
+			{
+				ID:     "aaa",
+				Name:   "web",
+				Labels: map[string]string{ComposeProjectLabel: "proj"},
+			},
+			{
+				ID:     "bbb",
+				Name:   "db",
+				Labels: map[string]string{ComposeProjectLabel: "proj"},
+			},
+		}
+
+		groups, ungrouped := GroupByComposeProject(containers)
+
+		assert.Len(t, groups, 1)
+		assert.Len(t, ungrouped, 0)
+		assert.Equal(t, "proj", groups[0].ProjectName)
+		assert.Len(t, groups[0].Containers, 2)
+	})
+
+	t.Run("empty_input", func(t *testing.T) {
+		groups, ungrouped := GroupByComposeProject(nil)
+
+		assert.Len(t, groups, 0)
+		assert.Len(t, ungrouped, 0)
+	})
+}
+
+// TestListContainers_PopulatesLabels tests that Labels are populated from SDK data
+func TestListContainers_PopulatesLabels(t *testing.T) {
+	sdkContainer := types.Container{
+		ID:      "abcdef1234567890abcdef1234567890",
+		Names:   []string{"/web"},
+		Image:   "nginx",
+		Status:  "Up",
+		State:   "running",
+		Created: time.Now().Unix(),
+		Labels: map[string]string{
+			ComposeProjectLabel: "myapp",
+			ComposeServiceLabel: "web",
+		},
+	}
+
+	mock := &MockDockerAPI{
+		ContainerListFn: func(ctx context.Context, opts container.ListOptions) ([]types.Container, error) {
+			return []types.Container{sdkContainer}, nil
+		},
+	}
+
+	client := &Client{api: mock}
+	result, err := client.ListContainers(context.Background(), true)
+
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	assert.Equal(t, "myapp", result[0].Labels[ComposeProjectLabel])
+	assert.Equal(t, "web", result[0].Labels[ComposeServiceLabel])
+}
+
+// TestStartComposeProject tests starting all containers in a Compose project
+func TestStartComposeProject(t *testing.T) {
+	t.Run("starts_stopped_containers_only", func(t *testing.T) {
+		var startedIDs []string
+		mock := &MockDockerAPI{
+			ContainerListFn: func(ctx context.Context, opts container.ListOptions) ([]types.Container, error) {
+				return []types.Container{
+					{
+						ID:    "aaa111aaa111",
+						Names: []string{"/web"},
+						State: "exited",
+						Labels: map[string]string{
+							ComposeProjectLabel: "myapp",
+						},
+					},
+					{
+						ID:    "bbb222bbb222",
+						Names: []string{"/db"},
+						State: "running",
+						Labels: map[string]string{
+							ComposeProjectLabel: "myapp",
+						},
+					},
+					{
+						ID:    "ccc333ccc333",
+						Names: []string{"/cache"},
+						State: "exited",
+						Labels: map[string]string{
+							ComposeProjectLabel: "myapp",
+						},
+					},
+				}, nil
+			},
+			ContainerStartFn: func(ctx context.Context, containerID string, options container.StartOptions) error {
+				startedIDs = append(startedIDs, containerID)
+				return nil
+			},
+		}
+
+		client := &Client{api: mock}
+		count, err := client.StartComposeProject(context.Background(), "myapp")
+
+		require.NoError(t, err)
+		assert.Equal(t, 2, count)
+		assert.Contains(t, startedIDs, "aaa111aaa111")
+		assert.Contains(t, startedIDs, "ccc333ccc333")
+		assert.NotContains(t, startedIDs, "bbb222bbb222")
+	})
+
+	t.Run("skips_other_projects", func(t *testing.T) {
+		var startedIDs []string
+		mock := &MockDockerAPI{
+			ContainerListFn: func(ctx context.Context, opts container.ListOptions) ([]types.Container, error) {
+				return []types.Container{
+					{
+						ID:    "aaa111aaa111",
+						Names: []string{"/web"},
+						State: "exited",
+						Labels: map[string]string{
+							ComposeProjectLabel: "myapp",
+						},
+					},
+					{
+						ID:    "bbb222bbb222",
+						Names: []string{"/other-web"},
+						State: "exited",
+						Labels: map[string]string{
+							ComposeProjectLabel: "other",
+						},
+					},
+				}, nil
+			},
+			ContainerStartFn: func(ctx context.Context, containerID string, options container.StartOptions) error {
+				startedIDs = append(startedIDs, containerID)
+				return nil
+			},
+		}
+
+		client := &Client{api: mock}
+		count, err := client.StartComposeProject(context.Background(), "myapp")
+
+		require.NoError(t, err)
+		assert.Equal(t, 1, count)
+		assert.Contains(t, startedIDs, "aaa111aaa111")
+	})
+}
+
+// TestStopComposeProject tests stopping all containers in a Compose project
+func TestStopComposeProject(t *testing.T) {
+	var stoppedIDs []string
+	mock := &MockDockerAPI{
+		ContainerListFn: func(ctx context.Context, opts container.ListOptions) ([]types.Container, error) {
+			return []types.Container{
+				{
+					ID:    "aaa111aaa111",
+					Names: []string{"/web"},
+					State: "running",
+					Labels: map[string]string{
+						ComposeProjectLabel: "myapp",
+					},
+				},
+				{
+					ID:    "bbb222bbb222",
+					Names: []string{"/db"},
+					State: "exited",
+					Labels: map[string]string{
+						ComposeProjectLabel: "myapp",
+					},
+				},
+			}, nil
+		},
+		ContainerStopFn: func(ctx context.Context, containerID string, options container.StopOptions) error {
+			stoppedIDs = append(stoppedIDs, containerID)
+			return nil
+		},
+	}
+
+	client := &Client{api: mock}
+	count, err := client.StopComposeProject(context.Background(), "myapp")
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+	assert.Contains(t, stoppedIDs, "aaa111aaa111")
+	assert.NotContains(t, stoppedIDs, "bbb222bbb222")
+}
+
+// TestRestartComposeProject tests restarting all containers in a Compose project
+func TestRestartComposeProject(t *testing.T) {
+	var restartedIDs []string
+	mock := &MockDockerAPI{
+		ContainerListFn: func(ctx context.Context, opts container.ListOptions) ([]types.Container, error) {
+			return []types.Container{
+				{
+					ID:    "aaa111aaa111",
+					Names: []string{"/web"},
+					State: "running",
+					Labels: map[string]string{
+						ComposeProjectLabel: "myapp",
+					},
+				},
+				{
+					ID:    "bbb222bbb222",
+					Names: []string{"/db"},
+					State: "running",
+					Labels: map[string]string{
+						ComposeProjectLabel: "myapp",
+					},
+				},
+				{
+					ID:     "ccc333ccc333",
+					Names:  []string{"/standalone"},
+					State:  "running",
+					Labels: nil,
+				},
+			}, nil
+		},
+		ContainerRestartFn: func(ctx context.Context, containerID string, options container.StopOptions) error {
+			restartedIDs = append(restartedIDs, containerID)
+			return nil
+		},
+	}
+
+	client := &Client{api: mock}
+	count, err := client.RestartComposeProject(context.Background(), "myapp")
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, count)
+	assert.Contains(t, restartedIDs, "aaa111aaa111")
+	assert.Contains(t, restartedIDs, "bbb222bbb222")
+	assert.NotContains(t, restartedIDs, "ccc333ccc333")
 }

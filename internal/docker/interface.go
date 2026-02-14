@@ -85,6 +85,10 @@ type DockerService interface {
 	PruneImagesDryRun(ctx context.Context, all bool) (ConfirmationInfo, error)
 	PruneVolumesDryRun(ctx context.Context) (ConfirmationInfo, error)
 	PruneNetworksDryRun(ctx context.Context) (ConfirmationInfo, error)
+	// Compose project lifecycle
+	StartComposeProject(ctx context.Context, projectName string) (int, error)
+	StopComposeProject(ctx context.Context, projectName string) (int, error)
+	RestartComposeProject(ctx context.Context, projectName string) (int, error)
 	// API returns the underlying DockerAPI for direct access (used by exec)
 	API() DockerAPI
 }

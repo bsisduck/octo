@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"sort"
 	"sync"
 	"time"
 )
@@ -15,6 +16,7 @@ type ContainerInfo struct {
 	Created time.Time
 	Ports   string
 	Size    int64
+	Labels  map[string]string // Container labels (includes Compose metadata)
 }
 
 // ImageInfo holds image details for display
@@ -143,6 +145,49 @@ func (c *DiskUsageCache) Set(data *DiskUsageInfo) {
 type ExecOptions struct {
 	ContainerID string
 	Shell       string // "/bin/sh" or "/bin/bash"
+}
+
+// Docker Compose label constants
+const (
+	ComposeProjectLabel = "com.docker.compose.project"
+	ComposeServiceLabel = "com.docker.compose.service"
+)
+
+// ComposeGroup groups containers belonging to the same Docker Compose project
+type ComposeGroup struct {
+	ProjectName string
+	Containers  []ContainerInfo
+}
+
+// GroupByComposeProject splits containers into Compose groups and ungrouped.
+// Containers without Compose labels are returned as ungrouped.
+// Groups are sorted alphabetically by project name.
+func GroupByComposeProject(containers []ContainerInfo) (groups []ComposeGroup, ungrouped []ContainerInfo) {
+	projectMap := make(map[string][]ContainerInfo)
+	for _, c := range containers {
+		if c.Labels == nil {
+			ungrouped = append(ungrouped, c)
+			continue
+		}
+		project, ok := c.Labels[ComposeProjectLabel]
+		if !ok || project == "" {
+			ungrouped = append(ungrouped, c)
+			continue
+		}
+		projectMap[project] = append(projectMap[project], c)
+	}
+
+	for name, cts := range projectMap {
+		groups = append(groups, ComposeGroup{
+			ProjectName: name,
+			Containers:  cts,
+		})
+	}
+	// Sort groups alphabetically
+	sort.Slice(groups, func(i, j int) bool {
+		return groups[i].ProjectName < groups[j].ProjectName
+	})
+	return groups, ungrouped
 }
 
 // ConfirmationInfo holds confirmation details for destructive operation

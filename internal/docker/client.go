@@ -117,6 +117,7 @@ func (c *Client) ListContainers(ctx context.Context, all bool) ([]ContainerInfo,
 			Created: time.Unix(c.Created, 0),
 			Ports:   ports,
 			Size:    c.SizeRw,
+			Labels:  c.Labels,
 		}
 	}
 
@@ -310,6 +311,7 @@ func (c *Client) GetStoppedContainers(ctx context.Context) ([]ContainerInfo, err
 			State:   ct.State,
 			Created: time.Unix(ct.Created, 0),
 			Size:    ct.SizeRw,
+			Labels:  ct.Labels,
 		}
 	}
 
@@ -744,6 +746,84 @@ func (c *Client) StopContainer(ctx context.Context, id string) error {
 // RestartContainer restarts a container by ID.
 func (c *Client) RestartContainer(ctx context.Context, id string) error {
 	return c.api.ContainerRestart(ctx, id, container.StopOptions{})
+}
+
+// StartComposeProject starts all stopped containers in a Compose project.
+// Skips already-running containers. Returns count of containers started.
+func (c *Client) StartComposeProject(ctx context.Context, projectName string) (int, error) {
+	containers, err := c.ListContainers(ctx, true)
+	if err != nil {
+		return 0, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	started := 0
+	for _, ct := range containers {
+		if ct.Labels == nil {
+			continue
+		}
+		if ct.Labels[ComposeProjectLabel] != projectName {
+			continue
+		}
+		if ct.State == "running" {
+			continue // skip already running
+		}
+		if err := c.api.ContainerStart(ctx, ct.ID, container.StartOptions{}); err != nil {
+			return started, fmt.Errorf("failed to start container %s: %w", ct.Name, err)
+		}
+		started++
+	}
+	return started, nil
+}
+
+// StopComposeProject stops all running containers in a Compose project.
+// Skips already-stopped containers. Returns count of containers stopped.
+func (c *Client) StopComposeProject(ctx context.Context, projectName string) (int, error) {
+	containers, err := c.ListContainers(ctx, true)
+	if err != nil {
+		return 0, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	stopped := 0
+	for _, ct := range containers {
+		if ct.Labels == nil {
+			continue
+		}
+		if ct.Labels[ComposeProjectLabel] != projectName {
+			continue
+		}
+		if ct.State != "running" {
+			continue // skip non-running
+		}
+		if err := c.api.ContainerStop(ctx, ct.ID, container.StopOptions{}); err != nil {
+			return stopped, fmt.Errorf("failed to stop container %s: %w", ct.Name, err)
+		}
+		stopped++
+	}
+	return stopped, nil
+}
+
+// RestartComposeProject restarts all containers in a Compose project.
+// Returns count of containers restarted.
+func (c *Client) RestartComposeProject(ctx context.Context, projectName string) (int, error) {
+	containers, err := c.ListContainers(ctx, true)
+	if err != nil {
+		return 0, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	restarted := 0
+	for _, ct := range containers {
+		if ct.Labels == nil {
+			continue
+		}
+		if ct.Labels[ComposeProjectLabel] != projectName {
+			continue
+		}
+		if err := c.api.ContainerRestart(ctx, ct.ID, container.StopOptions{}); err != nil {
+			return restarted, fmt.Errorf("failed to restart container %s: %w", ct.Name, err)
+		}
+		restarted++
+	}
+	return restarted, nil
 }
 
 // PruneContainers removes all stopped containers.

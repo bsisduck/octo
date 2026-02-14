@@ -56,6 +56,9 @@ type MockDockerService struct {
 	GetContainerLogsFn      func(ctx context.Context, containerID string, tail int) ([]LogEntry, error)
 	StreamContainerLogsFn   func(ctx context.Context, containerID string) (<-chan LogEntry, <-chan error, func())
 	GetContainerStatsFn     func(ctx context.Context, containerID string) (*ContainerMetrics, error)
+	StartComposeProjectFn   func(ctx context.Context, projectName string) (int, error)
+	StopComposeProjectFn    func(ctx context.Context, projectName string) (int, error)
+	RestartComposeProjectFn func(ctx context.Context, projectName string) (int, error)
 	APIFn                   func() DockerAPI
 }
 
@@ -310,6 +313,27 @@ func (m *MockDockerService) GetContainerStats(ctx context.Context, containerID s
 		MemoryLimit:   1024 * 1024 * 512,
 		MemoryPercent: 19.53,
 	}, nil
+}
+
+func (m *MockDockerService) StartComposeProject(ctx context.Context, projectName string) (int, error) {
+	if m.StartComposeProjectFn != nil {
+		return m.StartComposeProjectFn(ctx, projectName)
+	}
+	return 0, nil
+}
+
+func (m *MockDockerService) StopComposeProject(ctx context.Context, projectName string) (int, error) {
+	if m.StopComposeProjectFn != nil {
+		return m.StopComposeProjectFn(ctx, projectName)
+	}
+	return 0, nil
+}
+
+func (m *MockDockerService) RestartComposeProject(ctx context.Context, projectName string) (int, error) {
+	if m.RestartComposeProjectFn != nil {
+		return m.RestartComposeProjectFn(ctx, projectName)
+	}
+	return 0, nil
 }
 
 func (m *MockDockerService) API() DockerAPI {
