@@ -9,7 +9,7 @@ import (
 // FormatYAML marshals data to YAML
 func FormatYAML(w io.Writer, data interface{}) error {
 	encoder := yaml.NewEncoder(w)
-	encoder.SetIndent(2)  // 2-space indentation
+	encoder.SetIndent(2) // 2-space indentation
 	defer encoder.Close()
 	return encoder.Encode(data)
 }

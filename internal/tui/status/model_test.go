@@ -42,7 +42,7 @@ func TestStatus_UpdateWithDataMsg(t *testing.T) {
 		{ID: "xyz789", Repository: "nginx", Tag: "latest"},
 	}
 	diskUsage := &docker.DiskUsageInfo{
-		Total:           1000000000,
+		Total:            1000000000,
 		TotalReclaimable: 500000000,
 	}
 
@@ -109,7 +109,7 @@ func TestStatus_ViewRendersContent(t *testing.T) {
 		{ID: "img2", Repository: "", Dangling: true},
 	}
 	m.diskUsage = &docker.DiskUsageInfo{
-		Total:           1000000000,
+		Total:            1000000000,
 		TotalReclaimable: 500000000,
 	}
 	m.serverVersion = "25.0.0"
@@ -215,4 +215,3 @@ func TestStatus_CountsRunningContainers(t *testing.T) {
 
 	assert.Contains(t, view, "2")
 }
-

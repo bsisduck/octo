@@ -8,7 +8,7 @@ import (
 // FormatJSON marshals data to JSON with pretty-printing
 func FormatJSON(w io.Writer, data interface{}) error {
 	encoder := json.NewEncoder(w)
-	encoder.SetIndent("", "  ")  // 2-space indentation
+	encoder.SetIndent("", "  ") // 2-space indentation
 	return encoder.Encode(data)
 }
 

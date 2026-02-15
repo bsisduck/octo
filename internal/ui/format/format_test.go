@@ -11,9 +11,9 @@ import (
 
 func TestFormatJSON(t *testing.T) {
 	data := map[string]interface{}{
-		"name": "test-container",
+		"name":   "test-container",
 		"status": "running",
-		"count": 42,
+		"count":  42,
 	}
 
 	var buf bytes.Buffer

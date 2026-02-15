@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 3: Core Container Operations and Safety System** - Container start/stop/restart, 5-tier safety confirmations, TOCTOU protection, dry-run everywhere
 - [ ] **Phase 4: Viewing Features** - Logs viewer, metrics, filtering/search, JSON output, loading indicators, fix volume sizes
 - [x] **Phase 5: Interactive Enhancements** - Mouse click-to-select, clipboard copy, multiple input methods, shell completion
-- [ ] **Phase 6: Advanced Features** - Container exec/shell with PTY handling, Docker Compose awareness
+- [x] **Phase 6: Advanced Features** - Container exec/shell with PTY handling, Docker Compose awareness
 
 ## Phase Details
 
@@ -153,8 +153,8 @@ Plans:
 **Plans**: 2 plans in 2 waves
 
 Plans:
-- [ ] 06-01-PLAN.md -- Container exec/shell with PTY handling, SIGWINCH resize forwarding, tea.Exec integration, and terminal management
-- [ ] 06-02-PLAN.md -- Docker Compose awareness (label-based grouping, project-level lifecycle operations, visual TUI grouping)
+- [x] 06-01-PLAN.md -- Container exec/shell with PTY handling, SIGWINCH resize forwarding, tea.Exec integration, and terminal management
+- [x] 06-02-PLAN.md -- Docker Compose awareness (label-based grouping, project-level lifecycle operations, visual TUI grouping)
 
 **Key Risks**:
 - Pitfall MP8 (highest complexity feature): Container exec requires exiting Bubble Tea, entering raw PTY mode via `golang.org/x/term`, forwarding SIGWINCH for terminal resizing, demuxing Docker exec streams, and cleanly restoring terminal state. Budget 2-3x estimated time. Study Docker CLI source (`cli/command/container/exec.go`).
@@ -176,7 +176,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 3. Core Container Operations and Safety System | 0/2 | Not started | - |
 | 4. Viewing Features | 0/3 | Not started | - |
 | 5. Interactive Enhancements | 2/2 | Complete | 2026-02-14 |
-| 6. Advanced Features | 0/2 | Not started | - |
+| 6. Advanced Features | 2/2 | Complete | 2026-02-14 |
 
 ## Coverage
 
@@ -207,8 +207,8 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | R23 | Phase 5 | Complete |
 | R24 | Phase 5 | Complete |
 | R25 | Phase 2 | Pending |
-| R26 | Phase 6 | Pending |
-| R27 | Phase 6 | Pending |
+| R26 | Phase 6 | Complete |
+| R27 | Phase 6 | Complete |
 | R28 | Phase 4 | Pending |
 | R29 | Phase 4 | Pending |
 | R30 | Phase 4 | Pending |

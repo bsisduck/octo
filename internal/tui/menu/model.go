@@ -7,8 +7,8 @@ import (
 
 	"github.com/bsisduck/octo/internal/docker"
 	"github.com/bsisduck/octo/internal/ui/styles"
-	"github.com/dustin/go-humanize"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dustin/go-humanize"
 )
 
 type Model struct {

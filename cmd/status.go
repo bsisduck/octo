@@ -6,8 +6,8 @@ import (
 
 	"github.com/bsisduck/octo/internal/docker"
 	"github.com/bsisduck/octo/internal/tui/status"
-	"github.com/dustin/go-humanize"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 )
 

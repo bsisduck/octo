@@ -695,4 +695,3 @@ func TestClipboardTextFormatting(t *testing.T) {
 		})
 	}
 }
-

@@ -23,9 +23,9 @@ var (
 	Title = lipgloss.NewStyle().Bold(true).Foreground(ColorPrimary)
 
 	TitleWithMargin = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(ColorPrimary).
-		MarginBottom(1)
+			Bold(true).
+			Foreground(ColorPrimary).
+			MarginBottom(1)
 
 	Logo = lipgloss.NewStyle().Foreground(ColorPrimary)
 
@@ -39,9 +39,9 @@ var (
 	Section = lipgloss.NewStyle().Bold(true).Foreground(ColorSuccess)
 
 	Category = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(ColorSuccess).
-		PaddingLeft(1)
+			Bold(true).
+			Foreground(ColorSuccess).
+			PaddingLeft(1)
 )
 
 // Status and state styles
@@ -66,12 +66,12 @@ var (
 	Label = lipgloss.NewStyle().Foreground(ColorMuted)
 
 	LabelWithWidth = lipgloss.NewStyle().
-		Foreground(ColorMuted).
-		Width(14)
+			Foreground(ColorMuted).
+			Width(14)
 
 	StatLabel = lipgloss.NewStyle().
-		Foreground(ColorMuted).
-		Width(12)
+			Foreground(ColorMuted).
+			Width(12)
 
 	Value = lipgloss.NewStyle().Foreground(ColorText)
 
@@ -86,18 +86,18 @@ var (
 // Selection and interaction styles
 var (
 	Selected = lipgloss.NewStyle().
-		Foreground(ColorText).
-		Background(ColorHighlight).
-		Bold(true).
-		Padding(0, 1)
+			Foreground(ColorText).
+			Background(ColorHighlight).
+			Bold(true).
+			Padding(0, 1)
 
 	Normal = lipgloss.NewStyle().
 		Foreground(ColorNormal).
 		Padding(0, 1)
 
 	SelectedAnalyze = lipgloss.NewStyle().
-		Background(ColorHighlightBg).
-		Foreground(ColorText)
+			Background(ColorHighlightBg).
+			Foreground(ColorText)
 
 	NormalAnalyze = lipgloss.NewStyle().PaddingLeft(3)
 
@@ -111,32 +111,32 @@ var (
 	Subtitle = lipgloss.NewStyle().Foreground(ColorMuted)
 
 	DeleteConfirm = lipgloss.NewStyle().
-		Foreground(ColorError).
-		Bold(true)
+			Foreground(ColorError).
+			Bold(true)
 )
 
 // Tier-specific styles for safety confirmation dialogs
 var (
 	TierInformationalStyle = lipgloss.NewStyle().
-		Foreground(ColorPrimary).
-		Bold(true)
+				Foreground(ColorPrimary).
+				Bold(true)
 
 	TierLowRiskStyle = lipgloss.NewStyle().
-		Foreground(ColorSuccess).
-		Bold(true)
+				Foreground(ColorSuccess).
+				Bold(true)
 
 	TierModerateStyle = lipgloss.NewStyle().
-		Foreground(ColorWarning).
-		Bold(true)
+				Foreground(ColorWarning).
+				Bold(true)
 
 	TierHighRiskStyle = lipgloss.NewStyle().
-		Foreground(ColorError).
-		Bold(true)
+				Foreground(ColorError).
+				Bold(true)
 
 	TierBulkDestructiveStyle = lipgloss.NewStyle().
-		Foreground(ColorError).
-		Bold(true).
-		Background(lipgloss.Color("52")) // Dark red background
+					Foreground(ColorError).
+					Bold(true).
+					Background(lipgloss.Color("52")) // Dark red background
 )
 
 // TierStyle returns the appropriate style for a safety tier

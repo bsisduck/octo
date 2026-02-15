@@ -43,8 +43,8 @@ func TestMenu_EnterSelectsCurrentItem(t *testing.T) {
 // TestMenu_NumberKeySelectsItem tests number keys select items
 func TestMenu_NumberKeySelectsItem(t *testing.T) {
 	tests := []struct {
-		key         string
-		expectedIdx int
+		key            string
+		expectedIdx    int
 		expectedAction string
 	}{
 		{"1", 0, "status"},
@@ -303,4 +303,3 @@ func TestMouseClickHeaderHeightDockerNotConnected(t *testing.T) {
 	assert.Equal(t, "status", model2.ChosenAction())
 	assert.NotNil(t, cmd)
 }
-
