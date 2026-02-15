@@ -5,7 +5,7 @@
 See: .planning/PROJECT.md (updated 2026-02-06)
 
 **Core value:** Users can confidently manage their Docker environment without fear of accidentally destroying important resources -- every destructive action shows what will happen, asks for confirmation, and explains reversibility.
-**Current focus:** Phase 6 complete (exec/shell + Compose awareness). Phase 4 (logs) blocked by linter issue.
+**Current focus:** Retroactive SUMMARY creation for Phase 3. Phase 4 (logs) blocked by linter issue.
 
 ## Current Position
 
@@ -14,12 +14,12 @@ Plan: 2 of 2 in Phase 6 complete (06-02)
 Status: Phase 6 complete (exec/shell + Compose awareness)
 Last activity: 2026-02-15 -- 06-02 Compose awareness complete
 
-Progress: [#######.........] 50% (7/14 plans complete)
+Progress: [#############...] 93% (13/14 plans with summaries)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7
+- Total plans with summaries: 13
 - Average duration: 5.4min
 - Total execution time: 44min
 
@@ -58,6 +58,10 @@ Recent decisions affecting current work:
 - [02-03]: TUI models moved to internal/tui/{menu,analyze,status}/ for testability
 - [02-03]: cmd/ files reduced to pure Cobra wiring (<100 lines each for TUI commands)
 - [02-03]: Go version aligned to 1.24 across go.mod, .golangci.yml, CI workflows
+- [03-01]: Lifecycle methods accept caller-provided context (no context.Background() inside methods)
+- [03-01]: ContainerStop/Restart use default SDK timeout (nil pointer) -- no forced timeout override
+- [03-01]: No Force: true default -- Plan 03-02 adds confirmation dialogs for that decision
+- [03-01]: Menu model unchanged -- lifecycle operations only in analyze view where container selection exists
 - [03-02]: TOCTOU protection via two-phase re-check: before confirmation AND before execution
 - [03-02]: Never default to Force: true; always re-fetch state before destructive operations
 - [05-01]: Used tea.MouseActionPress + tea.MouseButtonLeft (modern API) not deprecated tea.MouseLeft
@@ -88,6 +92,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-15
-Stopped at: Completed 06-02-PLAN.md (Docker Compose awareness). Phase 6 complete (2/2 plans).
+Stopped at: Created 03-01-SUMMARY.md (retroactive summary for container lifecycle operations)
 Resume file: None
-Next action: Phase 4 (logs) when linter blocker resolved, or future enhancements (volume/network management)
+Next action: Create 03-02-SUMMARY.md (last remaining summary), then Phase 4 (logs) when linter blocker resolved

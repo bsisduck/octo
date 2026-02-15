@@ -84,7 +84,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 03-01-PLAN.md -- Container lifecycle operations (start/stop/restart) with TUI keybindings, state refresh, and error handling
+- [x] 03-01-PLAN.md -- Container lifecycle operations (start/stop/restart) with TUI keybindings, state refresh, and error handling
 - [ ] 03-02-PLAN.md -- 5-tier safety confirmation system (informational/low-risk/moderate/high-risk/bulk-destructive) with TOCTOU protection and dry-run methods
 
 **Key Risks**:
@@ -173,7 +173,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 |-------|----------------|--------|-----------|
 | 1. Critical Bug Fixes and Terminal Safety | 1/1 | Complete | 2026-02-06 |
 | 2. Architecture Foundation | 0/4 | Not started | - |
-| 3. Core Container Operations and Safety System | 0/2 | Not started | - |
+| 3. Core Container Operations and Safety System | 1/2 | In progress | - |
 | 4. Viewing Features | 0/3 | Not started | - |
 | 5. Interactive Enhancements | 2/2 | Complete | 2026-02-14 |
 | 6. Advanced Features | 2/2 | Complete | 2026-02-14 |
