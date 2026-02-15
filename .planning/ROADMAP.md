@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Critical Bug Fixes and Terminal Safety** - Fix 4 crash bugs, add panic recovery, restore terminal on signal
 - [x] **Phase 2: Architecture Foundation** - Extract Docker interface, add context/timeouts, centralize styles, split packages, test infrastructure
-- [ ] **Phase 3: Core Container Operations and Safety System** - Container start/stop/restart, 5-tier safety confirmations, TOCTOU protection, dry-run everywhere
+- [x] **Phase 3: Core Container Operations and Safety System** - Container start/stop/restart, 5-tier safety confirmations, TOCTOU protection, dry-run everywhere
 - [ ] **Phase 4: Viewing Features** - Logs viewer, metrics, filtering/search, JSON output, loading indicators, fix volume sizes
 - [x] **Phase 5: Interactive Enhancements** - Mouse click-to-select, clipboard copy, multiple input methods, shell completion
 - [x] **Phase 6: Advanced Features** - Container exec/shell with PTY handling, Docker Compose awareness
@@ -85,7 +85,7 @@ Plans:
 
 Plans:
 - [x] 03-01-PLAN.md -- Container lifecycle operations (start/stop/restart) with TUI keybindings, state refresh, and error handling
-- [ ] 03-02-PLAN.md -- 5-tier safety confirmation system (informational/low-risk/moderate/high-risk/bulk-destructive) with TOCTOU protection and dry-run methods
+- [x] 03-02-PLAN.md -- 5-tier safety confirmation system (informational/low-risk/moderate/high-risk/bulk-destructive) with TOCTOU protection and dry-run methods
 
 **Key Risks**:
 - Pitfall CP1 (top safety bug): TOCTOU race in delete operations. Current code uses `Force: true` unconditionally without re-checking container state. Must re-fetch state before every destructive op and never default to `Force: true`.
@@ -173,7 +173,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 |-------|----------------|--------|-----------|
 | 1. Critical Bug Fixes and Terminal Safety | 1/1 | Complete | 2026-02-06 |
 | 2. Architecture Foundation | 0/4 | Not started | - |
-| 3. Core Container Operations and Safety System | 1/2 | In progress | - |
+| 3. Core Container Operations and Safety System | 2/2 | Complete | 2026-02-15 |
 | 4. Viewing Features | 0/3 | Not started | - |
 | 5. Interactive Enhancements | 2/2 | Complete | 2026-02-14 |
 | 6. Advanced Features | 2/2 | Complete | 2026-02-14 |
@@ -193,11 +193,11 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | R09 | Phase 2 | Pending |
 | R10 | Phase 2 | Pending |
 | R11 | Phase 2 | Pending |
-| R12 | Phase 3 | Pending |
-| R13 | Phase 3 | Pending |
-| R14 | Phase 3 | Pending |
-| R15 | Phase 3 | Pending |
-| R16 | Phase 3 | Pending |
+| R12 | Phase 3 | Complete |
+| R13 | Phase 3 | Complete |
+| R14 | Phase 3 | Complete |
+| R15 | Phase 3 | Complete |
+| R16 | Phase 3 | Complete |
 | R17 | Phase 4 | Pending |
 | R18 | Phase 4 | Pending |
 | R19 | Phase 4 | Pending |
