@@ -91,6 +91,7 @@ func init() {
 	rootCmd.AddCommand(diagnoseCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(completionCmd)
+	rootCmd.AddCommand(logsCmd)
 }
 
 // runInteractiveMenu launches the TUI-based interactive menu

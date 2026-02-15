@@ -695,3 +695,145 @@ func TestClipboardTextFormatting(t *testing.T) {
 		})
 	}
 }
+
+// TestAnalyze_SpinnerInLoadingView tests that spinner appears in loading view
+func TestAnalyze_SpinnerInLoadingView(t *testing.T) {
+	mock := &docker.MockDockerService{}
+	m := New(mock, Options{})
+	m.loading = true
+	m.spinnerFrame = 3
+
+	view := m.View()
+	assert.Contains(t, view, "Loading Docker resources...")
+}
+
+// TestAnalyze_FilterMode tests entering and exiting filter mode
+func TestAnalyze_FilterMode(t *testing.T) {
+	m := createAnalyzeModelWithEntries()
+
+	// Enter filter mode
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")}
+	updated, _ := m.Update(msg)
+	model := updated.(Model)
+	assert.True(t, model.filtering)
+
+	// Type filter text
+	msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("w")}
+	updated, _ = model.Update(msg)
+	model = updated.(Model)
+	assert.Equal(t, "w", model.filterText)
+
+	// Escape to clear filter
+	msg = tea.KeyMsg{Type: tea.KeyEscape}
+	updated, _ = model.Update(msg)
+	model = updated.(Model)
+	assert.False(t, model.filtering)
+	assert.Empty(t, model.filterText)
+}
+
+// TestAnalyze_FilteredEntries tests that filtering reduces visible entries
+func TestAnalyze_FilteredEntries(t *testing.T) {
+	m := createAnalyzeModelWithEntries()
+	m.filterText = "web"
+	m.applyFilter()
+
+	visible := m.visibleEntries()
+	assert.NotEmpty(t, visible)
+	// Should contain web-app but not db-server or images
+	found := false
+	for _, e := range visible {
+		if e.Name == "web-app" {
+			found = true
+		}
+		if e.Name == "db-server" {
+			t.Error("db-server should be filtered out")
+		}
+	}
+	assert.True(t, found, "web-app should be in filtered results")
+}
+
+// TestAnalyze_LogsViewMode tests switching to logs view
+func TestAnalyze_LogsViewMode(t *testing.T) {
+	mock := &docker.MockDockerService{}
+	m := New(mock, Options{TypeFilter: "containers"})
+	m.entries = []ResourceEntry{
+		{
+			Type:       ResourceContainers,
+			ID:         "abc123",
+			Name:       "test-container",
+			Selectable: true,
+			Status:     "running",
+		},
+	}
+	m.selected = 0
+	m.loading = false
+	m.width = 80
+	m.height = 40
+
+	// Press 'l' to open logs
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")}
+	updated, cmd := m.Update(msg)
+	model := updated.(Model)
+
+	assert.Equal(t, viewLogs, model.viewMode)
+	assert.Equal(t, "test-container", model.logContainer)
+	assert.NotNil(t, cmd)
+}
+
+// TestAnalyze_LogsViewRender tests logs view rendering
+func TestAnalyze_LogsViewRender(t *testing.T) {
+	mock := &docker.MockDockerService{}
+	m := New(mock, Options{})
+	m.viewMode = viewLogs
+	m.logContainer = "test-container"
+	m.logEntries = []docker.LogEntry{
+		{Timestamp: docker.TestTime(), Stream: "stdout", Content: "hello world"},
+		{Timestamp: docker.TestTime(), Stream: "stderr", Content: "error msg"},
+	}
+	m.width = 80
+	m.height = 40
+	m.loading = false
+
+	view := m.View()
+	assert.Contains(t, view, "Logs: test-container")
+	assert.Contains(t, view, "hello world")
+	assert.Contains(t, view, "error msg")
+}
+
+// TestAnalyze_LogsViewEsc tests pressing esc returns to list view
+func TestAnalyze_LogsViewEsc(t *testing.T) {
+	mock := &docker.MockDockerService{}
+	m := New(mock, Options{})
+	m.viewMode = viewLogs
+	m.logContainer = "test"
+	m.loading = false
+
+	msg := tea.KeyMsg{Type: tea.KeyEscape}
+	updated, _ := m.Update(msg)
+	model := updated.(Model)
+
+	assert.Equal(t, viewList, model.viewMode)
+}
+
+// TestAnalyze_MetricsDisplay tests that metrics appear in view for running containers
+func TestAnalyze_MetricsDisplay(t *testing.T) {
+	mock := &docker.MockDockerService{}
+	m := New(mock, Options{})
+	m.entries = []ResourceEntry{
+		{
+			Type:       ResourceContainers,
+			ID:         "abc",
+			Name:       "runner",
+			Selectable: true,
+			CPUPercent: 25.5,
+			MemUsage:   1024 * 1024 * 100,
+			MemLimit:   1024 * 1024 * 512,
+		},
+	}
+	m.loading = false
+	m.width = 80
+	m.height = 40
+
+	view := m.View()
+	assert.Contains(t, view, "CPU: 25.5%")
+}

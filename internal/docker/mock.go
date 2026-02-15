@@ -16,6 +16,9 @@ import (
 
 var testTime = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
+// TestTime returns the time used in mock data for test assertions.
+func TestTime() time.Time { return testTime }
+
 // Compile-time interface check
 var _ DockerService = (*MockDockerService)(nil)
 

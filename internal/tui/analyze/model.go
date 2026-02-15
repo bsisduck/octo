@@ -5,14 +5,16 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/bsisduck/octo/internal/clipboard"
 	"github.com/bsisduck/octo/internal/docker"
 	"github.com/bsisduck/octo/internal/tui/common"
 	"github.com/bsisduck/octo/internal/ui/format"
 	"github.com/bsisduck/octo/internal/ui/styles"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // Resource types for the analyzer
@@ -59,6 +61,10 @@ type ResourceEntry struct {
 	ComposeService  string // Compose service name
 	IsProjectHeader bool   // True if this entry is a Compose project group header
 	ProjectName     string // Project name for project header entries
+	CPUPercent      float64
+	MemUsage        uint64
+	MemLimit        uint64
+	MemPercent      float64
 }
 
 // ClipboardText formats a human-readable string for clipboard copy.
@@ -105,12 +111,53 @@ type Model struct {
 	deleteConfirmInfo *docker.ConfirmationInfo
 	warnings          []string
 	statusMessage     string
+	spinnerFrame      int
+	// Filtering
+	filtering       bool
+	filterText      string
+	filteredEntries []ResourceEntry
+	// Logs view
+	viewMode       int // 0=list, 1=logs
+	logEntries     []docker.LogEntry
+	logOffset      int
+	logContainer   string
+	logContainerID string
+	logFollowing   bool
+	logCancelFn    func()
+	logFilterText  string
+	logFiltering   bool
 }
+
+const (
+	viewList = 0
+	viewLogs = 1
+)
+
+// spinnerTick is a message for animating the loading spinner
+type spinnerTick struct{}
+
+var spinnerChars = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 type DataMsg struct {
 	Entries  []ResourceEntry
 	Warnings []string
 	Err      error
+}
+
+// LogDataMsg carries fetched log entries
+type LogDataMsg struct {
+	Entries []docker.LogEntry
+	Err     error
+}
+
+// LogStreamMsg carries a single streamed log entry
+type LogStreamMsg struct {
+	Entry docker.LogEntry
+}
+
+// LogStreamErrMsg signals a stream error
+type LogStreamErrMsg struct {
+	Err error
 }
 
 // Exported for testing
@@ -154,7 +201,13 @@ func New(service docker.DockerService, opts Options) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return m.fetchResources()
+	return tea.Batch(m.fetchResources(), m.tickSpinner())
+}
+
+func (m Model) tickSpinner() tea.Cmd {
+	return tea.Tick(200*time.Millisecond, func(t time.Time) tea.Msg {
+		return spinnerTick{}
+	})
 }
 
 func (m Model) fetchResources() tea.Cmd {
@@ -235,6 +288,9 @@ func (m Model) fetchResources() tea.Cmd {
 				}
 			}
 		}
+
+		// Fetch metrics for running containers (cap at 20 to avoid excessive API calls)
+		entries = enrichContainerMetrics(ctx, m.docker, entries)
 
 		if m.filterType == ResourceAll || m.filterType == ResourceImages {
 			images, err := m.docker.ListImages(ctx, true)
@@ -344,9 +400,65 @@ func (m Model) fetchResources() tea.Cmd {
 	}
 }
 
+// enrichContainerMetrics fetches CPU/memory stats for running containers.
+// Caps at 20 running containers to avoid excessive API calls.
+func enrichContainerMetrics(ctx context.Context, svc docker.DockerService, entries []ResourceEntry) []ResourceEntry {
+	// Find running container indices
+	type target struct {
+		idx int
+		id  string
+	}
+	var targets []target
+	for i, e := range entries {
+		if e.Type == ResourceContainers && !e.IsCategory && !e.IsProjectHeader && !e.IsUnused && e.ID != "" {
+			targets = append(targets, target{idx: i, id: e.ID})
+			if len(targets) >= 20 {
+				break
+			}
+		}
+	}
+	if len(targets) == 0 {
+		return entries
+	}
+
+	// Fetch stats in parallel
+	type statsResult struct {
+		idx     int
+		metrics *docker.ContainerMetrics
+	}
+	results := make([]statsResult, len(targets))
+	var wg sync.WaitGroup
+	for i, t := range targets {
+		wg.Add(1)
+		go func(i int, t target) {
+			defer wg.Done()
+			metrics, err := svc.GetContainerStats(ctx, t.id)
+			if err == nil {
+				results[i] = statsResult{idx: t.idx, metrics: metrics}
+			}
+		}(i, t)
+	}
+	wg.Wait()
+
+	for _, r := range results {
+		if r.metrics != nil {
+			entries[r.idx].CPUPercent = r.metrics.CPUPercent
+			entries[r.idx].MemUsage = r.metrics.MemoryUsage
+			entries[r.idx].MemLimit = r.metrics.MemoryLimit
+			entries[r.idx].MemPercent = r.metrics.MemoryPercent
+		}
+	}
+	return entries
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Logs view mode key handling
+		if m.viewMode == viewLogs {
+			return m.updateLogsView(msg)
+		}
+
 		if m.deleteConfirm {
 			switch msg.String() {
 			case "y", "Y", "enter":
@@ -359,25 +471,79 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Filter mode key handling
+		if m.filtering {
+			switch msg.Type {
+			case tea.KeyEscape:
+				m.filtering = false
+				m.filterText = ""
+				m.filteredEntries = nil
+				m.selected = 0
+				m.offset = 0
+				return m, nil
+			case tea.KeyEnter:
+				m.filtering = false
+				return m, nil
+			case tea.KeyBackspace:
+				if len(m.filterText) > 0 {
+					m.filterText = m.filterText[:len(m.filterText)-1]
+					m.applyFilter()
+				}
+				return m, nil
+			case tea.KeyRunes:
+				m.filterText += string(msg.Runes)
+				m.applyFilter()
+				return m, nil
+			}
+			return m, nil
+		}
+
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "esc":
+			if m.filterText != "" {
+				m.filterText = ""
+				m.filteredEntries = nil
+				m.selected = 0
+				m.offset = 0
+				return m, nil
+			}
 			if m.filterType != ResourceAll {
 				m.filterType = ResourceAll
 				m.loading = true
 				return m, m.fetchResources()
 			}
 			return m, tea.Quit
+		case "/":
+			m.filtering = true
+			m.filterText = ""
+			return m, nil
+		case "l":
+			if m.canOperateOnSelected() && m.selectedEntry().Type == ResourceContainers {
+				entry := m.selectedEntry()
+				m.viewMode = viewLogs
+				m.logContainer = entry.Name
+				m.logContainerID = entry.ID
+				m.logEntries = nil
+				m.logOffset = 0
+				m.logFollowing = false
+				m.logFilterText = ""
+				m.logFiltering = false
+				return m, m.fetchLogs(entry.ID, 200)
+			}
 		case "up", "k":
 			m.moveSelection(-1)
 		case "down", "j":
 			m.moveSelection(1)
-		case "enter", "l", "right":
-			if m.selected < len(m.entries) {
-				entry := m.entries[m.selected]
+		case "enter", "right":
+			visible := m.visibleEntries()
+			if m.selected < len(visible) {
+				entry := visible[m.selected]
 				if entry.IsCategory {
 					m.filterType = entry.Type
+					m.filterText = ""
+					m.filteredEntries = nil
 					m.loading = true
 					return m, m.fetchResources()
 				}
@@ -389,8 +555,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.fetchResources()
 			}
 		case "d", "delete", "backspace":
-			if m.selected < len(m.entries) {
-				entry := m.entries[m.selected]
+			visible := m.visibleEntries()
+			if m.selected < len(visible) {
+				entry := visible[m.selected]
 				if entry.Selectable && !entry.IsCategory {
 					m.deleteTarget = &entry
 					// Phase 1: Call DryRun to get confirmation info (and re-check state)
@@ -460,9 +627,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 			if !m.deleteConfirm { // Don't process clicks during confirmation
+				visible := m.visibleEntries()
 				headerLines := 3 // title + separator + blank
+				if m.filtering || m.filterText != "" {
+					headerLines += 2 // filter bar + blank
+				}
 				idx := msg.Y - headerLines + m.offset
-				if idx >= 0 && idx < len(m.entries) {
+				if idx >= 0 && idx < len(visible) {
 					m.selected = idx
 					// Adjust viewport to follow selection
 					viewport := m.height - 12
@@ -525,6 +696,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case common.ClearStatusMsg:
 		m.statusMessage = ""
 
+	case LogDataMsg:
+		if msg.Err != nil {
+			m.statusMessage = fmt.Sprintf("Log fetch error: %v", msg.Err)
+		} else {
+			m.logEntries = msg.Entries
+			m.logOffset = max(0, len(m.logEntries)-m.logViewportHeight())
+		}
+
+	case LogStreamMsg:
+		m.logEntries = append(m.logEntries, msg.Entry)
+		if len(m.logEntries) > 5000 {
+			m.logEntries = m.logEntries[len(m.logEntries)-5000:]
+		}
+		if m.logFollowing {
+			m.logOffset = max(0, len(m.logEntries)-m.logViewportHeight())
+		}
+
+	case LogStreamErrMsg:
+		m.logFollowing = false
+		if msg.Err != nil {
+			m.statusMessage = fmt.Sprintf("Log stream error: %v", msg.Err)
+		}
+
+	case spinnerTick:
+		if m.loading {
+			m.spinnerFrame++
+			return m, m.tickSpinner()
+		}
+
 	case common.ExecFinishedMsg:
 		if msg.Err != nil {
 			m.statusMessage = fmt.Sprintf("Shell exited with error: %v", msg.Err)
@@ -544,13 +744,65 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// visibleEntries returns filtered entries if a filter is active, otherwise all entries.
+func (m *Model) visibleEntries() []ResourceEntry {
+	if m.filterText != "" && m.filteredEntries != nil {
+		return m.filteredEntries
+	}
+	return m.entries
+}
+
+// applyFilter filters entries by the current filterText.
+func (m *Model) applyFilter() {
+	if m.filterText == "" {
+		m.filteredEntries = nil
+		m.selected = 0
+		m.offset = 0
+		return
+	}
+
+	query := strings.ToLower(m.filterText)
+	var filtered []ResourceEntry
+	for _, e := range m.entries {
+		if e.IsCategory {
+			// Include category headers if any child matches
+			filtered = append(filtered, e)
+			continue
+		}
+		if strings.Contains(strings.ToLower(e.Name), query) ||
+			strings.Contains(strings.ToLower(e.ID), query) ||
+			strings.Contains(strings.ToLower(e.Extra), query) ||
+			strings.Contains(strings.ToLower(e.Status), query) {
+			filtered = append(filtered, e)
+		}
+	}
+
+	// Remove orphan category headers (categories with no children after them)
+	var cleaned []ResourceEntry
+	for i, e := range filtered {
+		if e.IsCategory {
+			// Check if next entry exists and is not a category
+			if i+1 < len(filtered) && !filtered[i+1].IsCategory {
+				cleaned = append(cleaned, e)
+			}
+		} else {
+			cleaned = append(cleaned, e)
+		}
+	}
+
+	m.filteredEntries = cleaned
+	m.selected = 0
+	m.offset = 0
+}
+
 func (m *Model) moveSelection(delta int) {
+	visible := m.visibleEntries()
 	newSelected := m.selected + delta
 	if newSelected < 0 {
 		newSelected = 0
 	}
-	if newSelected >= len(m.entries) {
-		newSelected = len(m.entries) - 1
+	if newSelected >= len(visible) {
+		newSelected = len(visible) - 1
 	}
 	m.selected = newSelected
 
@@ -667,7 +919,8 @@ func (m Model) deleteResource() tea.Cmd {
 
 // canOperateOnSelected checks if we can operate on the currently selected entry.
 func (m *Model) canOperateOnSelected() bool {
-	return m.selected < len(m.entries) && m.entries[m.selected].Selectable && !m.entries[m.selected].IsCategory
+	visible := m.visibleEntries()
+	return m.selected < len(visible) && visible[m.selected].Selectable && !visible[m.selected].IsCategory
 }
 
 // canExecOnSelected checks if exec is possible on the selected container (must be running).
@@ -681,8 +934,9 @@ func (m *Model) canExecOnSelected() bool {
 
 // selectedEntry returns the currently selected entry.
 func (m *Model) selectedEntry() ResourceEntry {
-	if m.selected < len(m.entries) {
-		return m.entries[m.selected]
+	visible := m.visibleEntries()
+	if m.selected < len(visible) {
+		return visible[m.selected]
 	}
 	return ResourceEntry{}
 }
@@ -783,13 +1037,169 @@ func (m Model) restartComposeProject(projectName string) tea.Cmd {
 	}
 }
 
+// fetchLogs fetches container logs asynchronously.
+func (m Model) fetchLogs(containerID string, tail int) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), docker.TimeoutLogs)
+		defer cancel()
+		entries, err := m.docker.GetContainerLogs(ctx, containerID, tail)
+		return LogDataMsg{Entries: entries, Err: err}
+	}
+}
+
+// startLogStream starts following log output.
+func (m *Model) startLogStream() tea.Cmd {
+	ctx := context.Background()
+	logCh, errCh, cancel := m.docker.StreamContainerLogs(ctx, m.logContainerID)
+	m.logCancelFn = cancel
+	m.logFollowing = true
+
+	return func() tea.Msg {
+		// Read from both channels
+		select {
+		case entry, ok := <-logCh:
+			if !ok {
+				return LogStreamErrMsg{Err: nil}
+			}
+			return LogStreamMsg{Entry: entry}
+		case err := <-errCh:
+			return LogStreamErrMsg{Err: err}
+		}
+	}
+}
+
+// continueLogStream continues reading from the stream.
+func (m Model) continueLogStream() tea.Cmd {
+	if !m.logFollowing || m.logCancelFn == nil {
+		return nil
+	}
+	ctx := context.Background()
+	logCh, errCh, cancel := m.docker.StreamContainerLogs(ctx, m.logContainerID)
+	// Cancel previous stream first
+	if m.logCancelFn != nil {
+		m.logCancelFn()
+	}
+	m.logCancelFn = cancel
+
+	return func() tea.Msg {
+		select {
+		case entry, ok := <-logCh:
+			if !ok {
+				return LogStreamErrMsg{Err: nil}
+			}
+			return LogStreamMsg{Entry: entry}
+		case err := <-errCh:
+			return LogStreamErrMsg{Err: err}
+		}
+	}
+}
+
+// logViewportHeight returns how many log lines fit in the viewport.
+func (m Model) logViewportHeight() int {
+	h := m.height - 6 // header + footer
+	if h < 5 {
+		h = 5
+	}
+	return h
+}
+
+// updateLogsView handles key events in logs view mode.
+func (m Model) updateLogsView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Log filter mode
+	if m.logFiltering {
+		switch msg.Type {
+		case tea.KeyEscape:
+			m.logFiltering = false
+			m.logFilterText = ""
+			return m, nil
+		case tea.KeyEnter:
+			m.logFiltering = false
+			return m, nil
+		case tea.KeyBackspace:
+			if len(m.logFilterText) > 0 {
+				m.logFilterText = m.logFilterText[:len(m.logFilterText)-1]
+			}
+			return m, nil
+		case tea.KeyRunes:
+			m.logFilterText += string(msg.Runes)
+			return m, nil
+		}
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "esc", "q":
+		// Stop stream if following
+		if m.logCancelFn != nil {
+			m.logCancelFn()
+			m.logCancelFn = nil
+		}
+		m.viewMode = viewList
+		m.logFollowing = false
+		m.logEntries = nil
+		m.logFilterText = ""
+		m.logFiltering = false
+		return m, nil
+	case "up", "k":
+		if m.logOffset > 0 {
+			m.logOffset--
+		}
+		m.logFollowing = false
+	case "down", "j":
+		maxOffset := max(0, len(m.visibleLogEntries())-m.logViewportHeight())
+		if m.logOffset < maxOffset {
+			m.logOffset++
+		}
+	case "G":
+		m.logOffset = max(0, len(m.visibleLogEntries())-m.logViewportHeight())
+	case "g":
+		m.logOffset = 0
+	case "f":
+		if m.logFollowing {
+			// Stop following
+			if m.logCancelFn != nil {
+				m.logCancelFn()
+				m.logCancelFn = nil
+			}
+			m.logFollowing = false
+		} else {
+			return m, m.startLogStream()
+		}
+	case "/":
+		m.logFiltering = true
+		m.logFilterText = ""
+	}
+	return m, nil
+}
+
+// visibleLogEntries returns log entries filtered by logFilterText.
+func (m Model) visibleLogEntries() []docker.LogEntry {
+	if m.logFilterText == "" {
+		return m.logEntries
+	}
+	query := strings.ToLower(m.logFilterText)
+	var filtered []docker.LogEntry
+	for _, e := range m.logEntries {
+		if strings.Contains(strings.ToLower(e.Content), query) {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered
+}
+
 func (m Model) View() string {
 	if m.err != nil {
 		return fmt.Sprintf("Error: %v\n\nPress 'q' to quit.", m.err)
 	}
 
 	if m.loading {
-		return "Loading Docker resources..."
+		spinner := spinnerChars[m.spinnerFrame%len(spinnerChars)]
+		return fmt.Sprintf("%s Loading Docker resources...", spinner)
+	}
+
+	// Logs view mode
+	if m.viewMode == viewLogs {
+		return m.renderLogsView()
 	}
 
 	var b strings.Builder
@@ -804,6 +1214,16 @@ func (m Model) View() string {
 	b.WriteString(strings.Repeat("─", 60))
 	b.WriteString("\n\n")
 
+	// Filter bar
+	if m.filtering || m.filterText != "" {
+		filterDisplay := "Filter: " + m.filterText
+		if m.filtering {
+			filterDisplay += "█"
+		}
+		b.WriteString(styles.Info.Render(filterDisplay))
+		b.WriteString("\n\n")
+	}
+
 	// Delete confirmation dialog (detailed)
 	if m.deleteConfirm && m.deleteTarget != nil && m.deleteConfirmInfo != nil {
 		b.WriteString(m.renderConfirmationDialog(*m.deleteConfirmInfo))
@@ -816,9 +1236,11 @@ func (m Model) View() string {
 		viewport = 5
 	}
 
+	visible := m.visibleEntries()
+
 	// Render entries
-	for i := m.offset; i < len(m.entries) && i < m.offset+viewport; i++ {
-		entry := m.entries[i]
+	for i := m.offset; i < len(visible) && i < m.offset+viewport; i++ {
+		entry := visible[i]
 		var line string
 
 		if entry.IsCategory {
@@ -840,9 +1262,18 @@ func (m Model) View() string {
 				sizeStr = format.Size(uint64(entry.Size))
 			}
 
-			status := ""
+			statusStr := ""
 			if entry.IsUnused || entry.IsDangling {
-				status = styles.Warning.Render(" (unused)")
+				statusStr = styles.Warning.Render(" (unused)")
+			}
+
+			// Metrics suffix for running containers
+			metricsStr := ""
+			if entry.Type == ResourceContainers && !entry.IsUnused && entry.CPUPercent > 0 {
+				metricsStr = styles.Label.Render(fmt.Sprintf("  CPU: %.1f%%  MEM: %s/%s",
+					entry.CPUPercent,
+					format.Size(entry.MemUsage),
+					format.Size(entry.MemLimit)))
 			}
 
 			// Align size to right
@@ -857,9 +1288,9 @@ func (m Model) View() string {
 				if entry.ComposeService != "" {
 					serviceLabel = fmt.Sprintf(" (%s)", entry.ComposeService)
 				}
-				line = fmt.Sprintf("    %-28s%s %s%s", name, serviceLabel, styles.Label.Render(sizeStr), status)
+				line = fmt.Sprintf("    %-28s%s %s%s%s", name, serviceLabel, styles.Label.Render(sizeStr), statusStr, metricsStr)
 			} else {
-				line = fmt.Sprintf("%-32s %s%s", name, styles.Label.Render(sizeStr), status)
+				line = fmt.Sprintf("%-32s %s%s%s", name, styles.Label.Render(sizeStr), statusStr, metricsStr)
 			}
 			line = styles.Normal.Render(line)
 		}
@@ -893,7 +1324,77 @@ func (m Model) View() string {
 	b.WriteString("\n")
 	b.WriteString(strings.Repeat("─", 60))
 	b.WriteString("\n")
-	b.WriteString(styles.Help.Render("↑↓/jk/click: navigate | s/t/r: start/stop/restart (project or container) | x: shell | y: copy | d: delete | q: quit"))
+	b.WriteString(styles.Help.Render("↑↓/jk: navigate | /: filter | l: logs | s/t/r: start/stop/restart | x: shell | y: copy | d: delete | q: quit"))
+
+	return b.String()
+}
+
+// renderLogsView renders the logs viewer.
+func (m Model) renderLogsView() string {
+	var b strings.Builder
+
+	// Header
+	followStr := ""
+	if m.logFollowing {
+		followStr = " [FOLLOWING]"
+	}
+	title := fmt.Sprintf("Logs: %s%s", m.logContainer, followStr)
+	b.WriteString(styles.Title.Render(title))
+	b.WriteString("\n")
+	b.WriteString(strings.Repeat("─", 60))
+	b.WriteString("\n")
+
+	// Filter bar for logs
+	if m.logFiltering || m.logFilterText != "" {
+		filterDisplay := "Filter: " + m.logFilterText
+		if m.logFiltering {
+			filterDisplay += "█"
+		}
+		b.WriteString(styles.Info.Render(filterDisplay))
+		b.WriteString("\n")
+	}
+
+	logEntries := m.visibleLogEntries()
+	viewport := m.logViewportHeight()
+
+	if len(logEntries) == 0 {
+		b.WriteString(styles.Info.Render("  No log entries"))
+		b.WriteString("\n")
+	} else {
+		end := m.logOffset + viewport
+		if end > len(logEntries) {
+			end = len(logEntries)
+		}
+		start := m.logOffset
+		if start < 0 {
+			start = 0
+		}
+
+		for i := start; i < end; i++ {
+			entry := logEntries[i]
+			ts := entry.Timestamp.Format("2006-01-02 15:04:05")
+			line := fmt.Sprintf("%s  %-6s  %s", ts, entry.Stream, entry.Content)
+			if entry.Stream == "stderr" {
+				line = styles.Error.Render(line)
+			} else {
+				line = styles.Normal.Render(line)
+			}
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
+	}
+
+	// Status
+	if m.statusMessage != "" {
+		b.WriteString("\n")
+		b.WriteString(styles.Info.Render("  " + m.statusMessage))
+		b.WriteString("\n")
+	}
+
+	// Footer
+	b.WriteString(strings.Repeat("─", 60))
+	b.WriteString("\n")
+	b.WriteString(styles.Help.Render("↑↓/jk: scroll | g/G: top/bottom | f: follow | /: filter | esc: back"))
 
 	return b.String()
 }

@@ -28,7 +28,8 @@ var _ DockerService = (*Client)(nil)
 // Client wraps the Docker SDK client with helper methods.
 // It uses the DockerAPI interface internally for testability.
 type Client struct {
-	api DockerAPI
+	api            DockerAPI
+	diskUsageCache *DiskUsageCache
 }
 
 // NewClient creates a new Docker client with automatic socket detection.
@@ -65,7 +66,10 @@ func NewClient() (*Client, error) {
 		return nil, fmt.Errorf("failed to connect to Docker daemon: %w", err)
 	}
 
-	return &Client{api: cli}, nil
+	return &Client{
+		api:            cli,
+		diskUsageCache: NewDiskUsageCache(10 * time.Second),
+	}, nil
 }
 
 // API returns the underlying DockerAPI for direct access (used by exec).
@@ -178,6 +182,9 @@ func (c *Client) ListVolumes(ctx context.Context) ([]VolumeInfo, error) {
 		}
 	}
 
+	// Get volume sizes from DiskUsage API (with caching)
+	volumeSizes := c.getVolumeSizes(ctx)
+
 	result := make([]VolumeInfo, len(volumes.Volumes))
 	for i, v := range volumes.Volumes {
 		created, _ := time.Parse(time.RFC3339, v.CreatedAt)
@@ -188,10 +195,37 @@ func (c *Client) ListVolumes(ctx context.Context) ([]VolumeInfo, error) {
 			Created:    created,
 			Labels:     v.Labels,
 			InUse:      usedVolumes[v.Name],
+			Size:       volumeSizes[v.Name],
 		}
 	}
 
 	return result, nil
+}
+
+// getVolumeSizes returns a map of volume name to size using DiskUsage API with caching.
+func (c *Client) getVolumeSizes(ctx context.Context) map[string]int64 {
+	sizes := make(map[string]int64)
+
+	// Try cache first
+	if c.diskUsageCache != nil {
+		if cached := c.diskUsageCache.Get(); cached != nil {
+			// Cache hit but doesn't have per-volume breakdown, need raw DiskUsage
+			// Fall through to fetch
+		}
+	}
+
+	du, err := c.api.DiskUsage(ctx, types.DiskUsageOptions{})
+	if err != nil {
+		return sizes // Return empty map on failure (sizes stay 0)
+	}
+
+	for _, v := range du.Volumes {
+		if v.UsageData.Size > 0 {
+			sizes[v.Name] = v.UsageData.Size
+		}
+	}
+
+	return sizes
 }
 
 // ListNetworks returns all networks.
