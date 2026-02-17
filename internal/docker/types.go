@@ -8,57 +8,57 @@ import (
 
 // ContainerInfo holds container details for display
 type ContainerInfo struct {
-	ID      string
-	Name    string
-	Image   string
-	Status  string
-	State   string
-	Created time.Time
-	Ports   string
-	Size    int64
-	Labels  map[string]string // Container labels (includes Compose metadata)
+	ID      string            `json:"containerId" yaml:"containerId"`
+	Name    string            `json:"containerName" yaml:"containerName"`
+	Image   string            `json:"containerImage" yaml:"containerImage"`
+	Status  string            `json:"containerStatus" yaml:"containerStatus"`
+	State   string            `json:"containerState" yaml:"containerState"`
+	Created time.Time         `json:"containerCreated" yaml:"containerCreated"`
+	Ports   string            `json:"containerPorts" yaml:"containerPorts"`
+	Size    int64             `json:"containerSize" yaml:"containerSize"`
+	Labels  map[string]string `json:"containerLabels" yaml:"containerLabels"` // Container labels (includes Compose metadata)
 }
 
 // ImageInfo holds image details for display
 type ImageInfo struct {
-	ID         string
-	Repository string
-	Tag        string
-	Size       int64
-	Created    time.Time
-	Containers int
-	Dangling   bool
+	ID         string    `json:"imageId" yaml:"imageId"`
+	Repository string    `json:"imageRepository" yaml:"imageRepository"`
+	Tag        string    `json:"imageTag" yaml:"imageTag"`
+	Size       int64     `json:"imageSize" yaml:"imageSize"`
+	Created    time.Time `json:"imageCreated" yaml:"imageCreated"`
+	Containers int       `json:"imageContainers" yaml:"imageContainers"`
+	Dangling   bool      `json:"imageDangling" yaml:"imageDangling"`
 }
 
 // VolumeInfo holds volume details for display
 type VolumeInfo struct {
-	Name       string
-	Driver     string
-	Mountpoint string
-	Size       int64
-	Created    time.Time
-	Labels     map[string]string
-	InUse      bool
+	Name       string            `json:"volumeName" yaml:"volumeName"`
+	Driver     string            `json:"volumeDriver" yaml:"volumeDriver"`
+	Mountpoint string            `json:"volumeMountpoint" yaml:"volumeMountpoint"`
+	Size       int64             `json:"volumeSize" yaml:"volumeSize"`
+	Created    time.Time         `json:"volumeCreated" yaml:"volumeCreated"`
+	Labels     map[string]string `json:"volumeLabels" yaml:"volumeLabels"`
+	InUse      bool              `json:"volumeInUse" yaml:"volumeInUse"`
 }
 
 // NetworkInfo holds network details for display
 type NetworkInfo struct {
-	ID         string
-	Name       string
-	Driver     string
-	Scope      string
-	Internal   bool
-	Containers int
+	ID         string `json:"networkId" yaml:"networkId"`
+	Name       string `json:"networkName" yaml:"networkName"`
+	Driver     string `json:"networkDriver" yaml:"networkDriver"`
+	Scope      string `json:"networkScope" yaml:"networkScope"`
+	Internal   bool   `json:"networkInternal" yaml:"networkInternal"`
+	Containers int    `json:"networkContainers" yaml:"networkContainers"`
 }
 
 // DiskUsageInfo holds Docker disk usage summary
 type DiskUsageInfo struct {
-	Images           int64
-	Containers       int64
-	Volumes          int64
-	BuildCache       int64
-	TotalReclaimable int64
-	Total            int64
+	Images           int64 `json:"diskImages" yaml:"diskImages"`
+	Containers       int64 `json:"diskContainers" yaml:"diskContainers"`
+	Volumes          int64 `json:"diskVolumes" yaml:"diskVolumes"`
+	BuildCache       int64 `json:"diskBuildCache" yaml:"diskBuildCache"`
+	TotalReclaimable int64 `json:"diskTotalReclaimable" yaml:"diskTotalReclaimable"`
+	Total            int64 `json:"diskTotal" yaml:"diskTotal"`
 }
 
 // SafetyTier represents danger level of destructive operation
@@ -91,23 +91,23 @@ func (t SafetyTier) String() string {
 
 // LogEntry represents a single log line from a container
 type LogEntry struct {
-	Timestamp time.Time
-	Stream    string // "stdout" or "stderr"
-	Content   string
+	Timestamp time.Time `json:"logTimestamp" yaml:"logTimestamp"`
+	Stream    string    `json:"logStream" yaml:"logStream"`    // "stdout" or "stderr"
+	Content   string    `json:"logContent" yaml:"logContent"`
 }
 
 // ContainerMetrics holds real-time metrics for a container
 type ContainerMetrics struct {
-	ContainerID   string
-	CPUPercent    float64
-	MemoryUsage   uint64
-	MemoryLimit   uint64
-	MemoryPercent float64
-	NetworkRx     uint64
-	NetworkTx     uint64
-	BlockRead     uint64
-	BlockWrite    uint64
-	PIDs          uint64
+	ContainerID   string  `json:"metricsContainerId" yaml:"metricsContainerId"`
+	CPUPercent    float64 `json:"metricsCpuPercent" yaml:"metricsCpuPercent"`
+	MemoryUsage   uint64  `json:"metricsMemoryUsage" yaml:"metricsMemoryUsage"`
+	MemoryLimit   uint64  `json:"metricsMemoryLimit" yaml:"metricsMemoryLimit"`
+	MemoryPercent float64 `json:"metricsMemoryPercent" yaml:"metricsMemoryPercent"`
+	NetworkRx     uint64  `json:"metricsNetworkRx" yaml:"metricsNetworkRx"`
+	NetworkTx     uint64  `json:"metricsNetworkTx" yaml:"metricsNetworkTx"`
+	BlockRead     uint64  `json:"metricsBlockRead" yaml:"metricsBlockRead"`
+	BlockWrite    uint64  `json:"metricsBlockWrite" yaml:"metricsBlockWrite"`
+	PIDs          uint64  `json:"metricsPids" yaml:"metricsPids"`
 }
 
 // DiskUsageCache caches DiskUsage API results with TTL
@@ -192,11 +192,11 @@ func GroupByComposeProject(containers []ContainerInfo) (groups []ComposeGroup, u
 
 // ConfirmationInfo holds confirmation details for destructive operation
 type ConfirmationInfo struct {
-	Tier             SafetyTier
-	Title            string   // "Delete Container?"
-	Description      string   // "Stopped container 'web' (500MB)"
-	Resources        []string // ["container: web", "size: 500MB"]
-	Reversible       bool     // Can action be undone?
-	UndoInstructions string   // "Can be recreated from image"
-	Warnings         []string // Additional warnings
+	Tier             SafetyTier `json:"confirmationTier" yaml:"confirmationTier"`
+	Title            string     `json:"confirmationTitle" yaml:"confirmationTitle"`            // "Delete Container?"
+	Description      string     `json:"confirmationDescription" yaml:"confirmationDescription"` // "Stopped container 'web' (500MB)"
+	Resources        []string   `json:"confirmationResources" yaml:"confirmationResources"`     // ["container: web", "size: 500MB"]
+	Reversible       bool       `json:"confirmationReversible" yaml:"confirmationReversible"`   // Can action be undone?
+	UndoInstructions string     `json:"confirmationUndoInstructions" yaml:"confirmationUndoInstructions"` // "Can be recreated from image"
+	Warnings         []string   `json:"confirmationWarnings" yaml:"confirmationWarnings"`       // Additional warnings
 }
