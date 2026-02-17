@@ -5,7 +5,7 @@
 See: .planning/PROJECT.md (updated 2026-02-06)
 
 **Core value:** Users can confidently manage their Docker environment without fear of accidentally destroying important resources -- every destructive action shows what will happen, asks for confirmation, and explains reversibility.
-**Current focus:** Phase 4 plan 05 complete. Executing Phase 4 (Viewing Features) gap closure plans.
+**Current focus:** Phase 4 plan 04 re-executed with full implementation. Executing Phase 4 (Viewing Features) gap closure plans.
 
 ## Current Position
 
@@ -78,6 +78,9 @@ Recent decisions affecting current work:
 - [06-01]: No timeout on exec sessions -- interactive with no predictable duration; only setup uses TimeoutExecCreate
 - [Phase 06-02]: Label-based Compose detection (not external dependencies): Uses com.docker.compose.project label for self-contained grouping
 - [Phase 06-02]: Project headers as selectable entries: Enables project-level operations (s/t/r) on entire groups
+- [04-04]: Ring buffer uses sync.Mutex (not channels) for thread-safe O(1) append -- pure data structure pattern
+- [04-04]: Model stores pre-formatted strings in buffer (not raw LogEntry) for simpler viewport rendering
+- [04-04]: Regex compiled on Enter not per-keystroke to avoid invalid intermediate patterns
 - [04-05]: Fully qualified camelCase JSON tags per CONTEXT.md decision (containerId not id)
 - [04-05]: AnalyzeOutput mirrors status.go StatusOutput pattern for consistency across commands
 
@@ -95,6 +98,6 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-17
-Stopped at: Completed 04-05-PLAN.md (JSON struct tags + analyze CLI output). Phase 4 plan 5 of 5 done.
+Stopped at: Completed 04-04-PLAN.md (ring buffer + TUI logs model). 04-04 re-executed with full implementation.
 Resume file: None
 Next action: Phase 4 verification -- all 5 plans complete, ready for phase verification pass
