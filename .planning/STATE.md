@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-06)
 
 **Core value:** Users can confidently manage their Docker environment without fear of accidentally destroying important resources -- every destructive action shows what will happen, asks for confirmation, and explains reversibility.
-**Current focus:** Phase 3 verified and marked complete. All 6 phases now have summaries (14/14 plans). Phase 4 remains last incomplete phase.
+**Current focus:** Phase 4 plan 05 complete. Executing Phase 4 (Viewing Features) gap closure plans.
 
 ## Current Position
 
-Phase: 3 of 6 (Core Container Operations and Safety System) -- VERIFIED COMPLETE
-Plan: 2 of 2 in Phase 3 complete (03-02)
-Status: Phase 3 verified (7/7 must-haves passed, no regressions)
-Last activity: 2026-02-15 -- Phase 3 verification passed, ROADMAP updated
+Phase: 4 of 6 (Viewing Features)
+Plan: 5 of 5 in Phase 4 complete (04-05)
+Status: Phase 4 plan 05 complete -- JSON struct tags and analyze CLI output
+Last activity: 2026-02-17 -- Completed 04-05 (JSON struct tags + analyze JSON/YAML output)
 
-Progress: [################] 100% (14/14 plans with summaries)
+Progress: [################] 100% (16/16 plans with summaries)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans with summaries: 14
-- Average duration: 5.4min
-- Total execution time: 44min
+- Total plans with summaries: 16
+- Average duration: 5.1min
+- Total execution time: 48min
 
 **By Phase:**
 
@@ -30,12 +30,13 @@ Progress: [################] 100% (14/14 plans with summaries)
 | 01-critical-bug-fixes | 1/1 | 3min | 3min |
 | 02-architecture-foundation | 4/4 | 18min | 4.5min |
 | 03-core-container-operations-and-safety-system | 2/2 | 10min | 5min |
+| 04-viewing-features | 5/5 | 14min | 2.8min |
 | 05-interactive-enhancements | 2/2 | 14min | 7min |
 | 06-advanced-features | 2/2 | 17min | 8.5min |
 
 **Recent Trend:**
-- Last 2 plans: 06-01 (container exec/shell), 06-02 (Compose awareness)
-- Trend: Phase 6 complete. Both advanced features shipped efficiently (exec/shell 5min, Compose 12min).
+- Last 2 plans: 04-04 (ring buffer log storage), 04-05 (JSON struct tags + analyze CLI output)
+- Trend: Phase 4 gap closure plans executing rapidly (4min each).
 
 *Updated after each plan completion*
 
@@ -77,6 +78,8 @@ Recent decisions affecting current work:
 - [06-01]: No timeout on exec sessions -- interactive with no predictable duration; only setup uses TimeoutExecCreate
 - [Phase 06-02]: Label-based Compose detection (not external dependencies): Uses com.docker.compose.project label for self-contained grouping
 - [Phase 06-02]: Project headers as selectable entries: Enables project-level operations (s/t/r) on entire groups
+- [04-05]: Fully qualified camelCase JSON tags per CONTEXT.md decision (containerId not id)
+- [04-05]: AnalyzeOutput mirrors status.go StatusOutput pattern for consistency across commands
 
 ### Pending Todos
 
@@ -91,7 +94,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-15
-Stopped at: Phase 3 verified complete. ROADMAP.md updated. All phases except Phase 4 are complete.
+Last session: 2026-02-17
+Stopped at: Completed 04-05-PLAN.md (JSON struct tags + analyze CLI output). Phase 4 plan 5 of 5 done.
 Resume file: None
-Next action: Phase 4 (Viewing Features) -- last incomplete phase for v1.0 milestone
+Next action: Phase 4 verification -- all 5 plans complete, ready for phase verification pass
