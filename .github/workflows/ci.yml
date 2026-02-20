@@ -42,7 +42,10 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Run unit tests
+      - name: Build binary for integration tests
+        run: CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/octo .
+
+      - name: Run tests
         run: go test -v -race -coverprofile=coverage.out ./...
 
       - name: Upload coverage

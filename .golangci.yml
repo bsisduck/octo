@@ -1,11 +1,11 @@
-# golangci-lint configuration
-# https://golangci-lint.run/usage/configuration/
+version: "2"
 
 run:
   timeout: 5m
   go: "1.24"
 
 linters:
+  default: none
   enable:
     - errcheck
     - gosimple
@@ -13,38 +13,35 @@ linters:
     - ineffassign
     - staticcheck
     - unused
-    - gofmt
-    - goimports
-    - misspell
     - unconvert
     - unparam
+    - misspell
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+    misspell:
+      locale: US
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - unparam
+    max-issues-per-linter: 0
+    max-same-issues: 0
 
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    check-blank: false
-
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment
-
-  gofmt:
-    simplify: true
-
-  goimports:
-    local-prefixes: github.com/bsisduck/octo
-
-  misspell:
-    locale: US
-
-issues:
-  exclude-rules:
-    # Exclude some linters from running on tests files
-    - path: _test\.go
-      linters:
-        - errcheck
-        - unparam
-
-  max-issues-per-linter: 0
-  max-same-issues: 0
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes:
+        - github.com/bsisduck/octo
