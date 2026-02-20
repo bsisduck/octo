@@ -5,18 +5,19 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/bsisduck/octo/internal/docker"
 	"github.com/spf13/cobra"
+
+	"github.com/bsisduck/octo/internal/docker"
 )
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Show version information",
 	Long:  "Display Octo version, build information, and Docker connection status.",
-	Run:   runVersion,
+	RunE:  runVersion,
 }
 
-func runVersion(cmd *cobra.Command, args []string) {
+func runVersion(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Octo version %s\n", Version)
 	fmt.Printf("Go version: %s\n", runtime.Version())
 	fmt.Printf("OS/Arch: %s/%s\n", runtime.GOOS, runtime.GOARCH)
@@ -32,7 +33,7 @@ func runVersion(cmd *cobra.Command, args []string) {
 	client, err := docker.NewClient()
 	if err != nil {
 		fmt.Printf("Docker: Not connected (%v)\n", err)
-		return
+		return nil
 	}
 	defer client.Close()
 
@@ -40,7 +41,7 @@ func runVersion(cmd *cobra.Command, args []string) {
 	info, err := client.GetServerInfo(ctx)
 	if err != nil {
 		fmt.Printf("Docker: Error getting info (%v)\n", err)
-		return
+		return nil
 	}
 
 	fmt.Printf("Docker version: %s\n", info.ServerVersion)
@@ -48,4 +49,5 @@ func runVersion(cmd *cobra.Command, args []string) {
 	fmt.Printf("Docker Arch: %s\n", info.Architecture)
 	fmt.Printf("Containers: %d (running: %d)\n", info.Containers, info.ContainersRunning)
 	fmt.Printf("Images: %d\n", info.Images)
+	return nil
 }

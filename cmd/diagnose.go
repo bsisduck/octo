@@ -3,14 +3,17 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 	"time"
 
-	"github.com/bsisduck/octo/internal/docker"
-	"github.com/bsisduck/octo/internal/ui/styles"
 	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
+
+	"github.com/bsisduck/octo/internal/docker"
+	"github.com/bsisduck/octo/internal/ui/format"
+	"github.com/bsisduck/octo/internal/ui/styles"
 )
 
 var diagnoseCmd = &cobra.Command{
@@ -30,14 +33,29 @@ func init() {
 }
 
 type DiagnosticResult struct {
-	Name    string
-	Status  string // "ok", "warn", "error"
-	Message string
-	Details string
+	Name    string `json:"name" yaml:"name"`
+	Status  string `json:"status" yaml:"status"`
+	Message string `json:"message" yaml:"message"`
+	Details string `json:"details,omitempty" yaml:"details,omitempty"`
+}
+
+// DiagnoseOutput holds structured diagnostic data for JSON/YAML output
+type DiagnoseOutput struct {
+	Results []DiagnosticResult `json:"results" yaml:"results"`
+	Summary DiagnoseSummary    `json:"summary" yaml:"summary"`
+}
+
+// DiagnoseSummary holds pass/warn/error counts
+type DiagnoseSummary struct {
+	Passed   int `json:"passed" yaml:"passed"`
+	Warnings int `json:"warnings" yaml:"warnings"`
+	Errors   int `json:"errors" yaml:"errors"`
 }
 
 func runDiagnose(cmd *cobra.Command, args []string) error {
 	verbose, _ := cmd.Flags().GetBool("verbose")
+	outputFormat, _ := cmd.Flags().GetString("output-format")
+	textMode := outputFormat != "json" && outputFormat != "yaml"
 
 	// Styles (defined in internal/ui/styles/theme.go)
 	titleStyle := styles.Title
@@ -46,29 +64,40 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 	errorStyle := styles.Error
 	infoStyle := styles.Info
 
-	fmt.Println()
-	fmt.Println(titleStyle.Render("🐙 Octo Docker Diagnostics"))
-	fmt.Println(strings.Repeat("─", 50))
-	fmt.Println()
+	if textMode {
+		fmt.Println()
+		fmt.Println(titleStyle.Render("🐙 Octo Docker Diagnostics"))
+		fmt.Println(strings.Repeat("─", 50))
+		fmt.Println()
+	}
 
 	results := []DiagnosticResult{}
 	ctx := context.Background()
 
 	// Check 1: Docker connection
-	fmt.Print("Checking Docker connection... ")
+	if textMode {
+		fmt.Print("Checking Docker connection... ")
+	}
 	client, err := docker.NewClient()
 	if err != nil {
-		fmt.Println(errorStyle.Render("FAILED"))
+		if textMode {
+			fmt.Println(errorStyle.Render("FAILED"))
+		}
 		results = append(results, DiagnosticResult{
 			Name:    "Docker Connection",
 			Status:  "error",
 			Message: "Cannot connect to Docker daemon",
 			Details: err.Error(),
 		})
+		if !textMode {
+			return outputDiagnoseStructured(outputFormat, results)
+		}
 		printDiagnosticSummary(results, verbose)
 		return fmt.Errorf("docker connection failed: %w", err)
 	}
-	fmt.Println(okStyle.Render("OK"))
+	if textMode {
+		fmt.Println(okStyle.Render("OK"))
+	}
 	results = append(results, DiagnosticResult{
 		Name:    "Docker Connection",
 		Status:  "ok",
@@ -77,10 +106,14 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 	defer client.Close()
 
 	// Check 2: Docker version
-	fmt.Print("Checking Docker version... ")
+	if textMode {
+		fmt.Print("Checking Docker version... ")
+	}
 	info, err := client.GetServerInfo(ctx)
 	if err != nil {
-		fmt.Println(errorStyle.Render("FAILED"))
+		if textMode {
+			fmt.Println(errorStyle.Render("FAILED"))
+		}
 		results = append(results, DiagnosticResult{
 			Name:    "Docker Version",
 			Status:  "error",
@@ -88,7 +121,9 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 			Details: err.Error(),
 		})
 	} else {
-		fmt.Println(okStyle.Render(info.ServerVersion))
+		if textMode {
+			fmt.Println(okStyle.Render(info.ServerVersion))
+		}
 		results = append(results, DiagnosticResult{
 			Name:    "Docker Version",
 			Status:  "ok",
@@ -98,9 +133,13 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check 3: Docker daemon mode
-	fmt.Print("Checking daemon mode... ")
+	if textMode {
+		fmt.Print("Checking daemon mode... ")
+	}
 	if info.Swarm.LocalNodeState == "active" {
-		fmt.Println(warnStyle.Render("SWARM MODE"))
+		if textMode {
+			fmt.Println(warnStyle.Render("SWARM MODE"))
+		}
 		results = append(results, DiagnosticResult{
 			Name:    "Daemon Mode",
 			Status:  "warn",
@@ -108,7 +147,9 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 			Details: "Some operations may behave differently in Swarm mode",
 		})
 	} else {
-		fmt.Println(okStyle.Render("STANDALONE"))
+		if textMode {
+			fmt.Println(okStyle.Render("STANDALONE"))
+		}
 		results = append(results, DiagnosticResult{
 			Name:    "Daemon Mode",
 			Status:  "ok",
@@ -117,17 +158,23 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check 4: Storage driver
-	fmt.Print("Checking storage driver... ")
+	if textMode {
+		fmt.Print("Checking storage driver... ")
+	}
 	recommendedDrivers := map[string]bool{"overlay2": true, "btrfs": true}
 	if recommendedDrivers[info.Driver] {
-		fmt.Println(okStyle.Render(info.Driver))
+		if textMode {
+			fmt.Println(okStyle.Render(info.Driver))
+		}
 		results = append(results, DiagnosticResult{
 			Name:    "Storage Driver",
 			Status:  "ok",
 			Message: fmt.Sprintf("Using %s (recommended)", info.Driver),
 		})
 	} else {
-		fmt.Println(warnStyle.Render(info.Driver))
+		if textMode {
+			fmt.Println(warnStyle.Render(info.Driver))
+		}
 		results = append(results, DiagnosticResult{
 			Name:    "Storage Driver",
 			Status:  "warn",
@@ -137,10 +184,14 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check 5: Disk space
-	fmt.Print("Checking disk usage... ")
+	if textMode {
+		fmt.Print("Checking disk usage... ")
+	}
 	diskUsage, err := client.GetDiskUsage(ctx)
 	if err != nil {
-		fmt.Println(errorStyle.Render("FAILED"))
+		if textMode {
+			fmt.Println(errorStyle.Render("FAILED"))
+		}
 		results = append(results, DiagnosticResult{
 			Name:    "Disk Usage",
 			Status:  "error",
@@ -153,7 +204,9 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 			reclaimablePercent = float64(diskUsage.TotalReclaimable) / float64(diskUsage.Total) * 100
 		}
 		if reclaimablePercent > 50 {
-			fmt.Println(warnStyle.Render(fmt.Sprintf("%.0f%% reclaimable", reclaimablePercent)))
+			if textMode {
+				fmt.Println(warnStyle.Render(fmt.Sprintf("%.0f%% reclaimable", reclaimablePercent)))
+			}
 			results = append(results, DiagnosticResult{
 				Name:    "Disk Usage",
 				Status:  "warn",
@@ -161,7 +214,9 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 				Details: "Consider running 'octo cleanup' or 'octo prune'",
 			})
 		} else {
-			fmt.Println(okStyle.Render(humanize.Bytes(uint64(diskUsage.Total))))
+			if textMode {
+				fmt.Println(okStyle.Render(humanize.Bytes(uint64(diskUsage.Total))))
+			}
 			results = append(results, DiagnosticResult{
 				Name:    "Disk Usage",
 				Status:  "ok",
@@ -171,10 +226,14 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check 6: Container count
-	fmt.Print("Checking containers... ")
+	if textMode {
+		fmt.Print("Checking containers... ")
+	}
 	containers, err := client.ListContainers(ctx, true)
 	if err != nil {
-		fmt.Println(errorStyle.Render("FAILED"))
+		if textMode {
+			fmt.Println(errorStyle.Render("FAILED"))
+		}
 	} else {
 		running := 0
 		stopped := 0
@@ -187,7 +246,9 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 		}
 
 		if stopped > 10 {
-			fmt.Println(warnStyle.Render(fmt.Sprintf("%d stopped", stopped)))
+			if textMode {
+				fmt.Println(warnStyle.Render(fmt.Sprintf("%d stopped", stopped)))
+			}
 			results = append(results, DiagnosticResult{
 				Name:    "Containers",
 				Status:  "warn",
@@ -195,7 +256,9 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 				Details: "Consider removing unused stopped containers with 'octo cleanup --containers'",
 			})
 		} else {
-			fmt.Println(okStyle.Render(fmt.Sprintf("%d running", running)))
+			if textMode {
+				fmt.Println(okStyle.Render(fmt.Sprintf("%d running", running)))
+			}
 			results = append(results, DiagnosticResult{
 				Name:    "Containers",
 				Status:  "ok",
@@ -205,17 +268,23 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check 7: Dangling images
-	fmt.Print("Checking dangling images... ")
+	if textMode {
+		fmt.Print("Checking dangling images... ")
+	}
 	danglingImages, err := client.GetDanglingImages(ctx)
 	if err != nil {
-		fmt.Println(errorStyle.Render("FAILED"))
+		if textMode {
+			fmt.Println(errorStyle.Render("FAILED"))
+		}
 	} else {
 		if len(danglingImages) > 5 {
 			var totalSize int64
 			for _, img := range danglingImages {
 				totalSize += img.Size
 			}
-			fmt.Println(warnStyle.Render(fmt.Sprintf("%d (%s)", len(danglingImages), humanize.Bytes(uint64(totalSize)))))
+			if textMode {
+				fmt.Println(warnStyle.Render(fmt.Sprintf("%d (%s)", len(danglingImages), humanize.Bytes(uint64(totalSize)))))
+			}
 			results = append(results, DiagnosticResult{
 				Name:    "Dangling Images",
 				Status:  "warn",
@@ -223,7 +292,9 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 				Details: "Run 'octo cleanup --images' to remove dangling images",
 			})
 		} else {
-			fmt.Println(okStyle.Render(fmt.Sprintf("%d", len(danglingImages))))
+			if textMode {
+				fmt.Println(okStyle.Render(fmt.Sprintf("%d", len(danglingImages))))
+			}
 			results = append(results, DiagnosticResult{
 				Name:    "Dangling Images",
 				Status:  "ok",
@@ -233,13 +304,19 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check 8: Unused volumes
-	fmt.Print("Checking unused volumes... ")
+	if textMode {
+		fmt.Print("Checking unused volumes... ")
+	}
 	unusedVolumes, err := client.GetUnusedVolumes(ctx)
 	if err != nil {
-		fmt.Println(errorStyle.Render("FAILED"))
+		if textMode {
+			fmt.Println(errorStyle.Render("FAILED"))
+		}
 	} else {
 		if len(unusedVolumes) > 5 {
-			fmt.Println(warnStyle.Render(fmt.Sprintf("%d", len(unusedVolumes))))
+			if textMode {
+				fmt.Println(warnStyle.Render(fmt.Sprintf("%d", len(unusedVolumes))))
+			}
 			results = append(results, DiagnosticResult{
 				Name:    "Unused Volumes",
 				Status:  "warn",
@@ -247,7 +324,9 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 				Details: "Run 'octo cleanup --volumes' to remove unused volumes",
 			})
 		} else {
-			fmt.Println(okStyle.Render(fmt.Sprintf("%d", len(unusedVolumes))))
+			if textMode {
+				fmt.Println(okStyle.Render(fmt.Sprintf("%d", len(unusedVolumes))))
+			}
 			results = append(results, DiagnosticResult{
 				Name:    "Unused Volumes",
 				Status:  "ok",
@@ -257,14 +336,18 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check 9: API response time
-	fmt.Print("Checking API responsiveness... ")
+	if textMode {
+		fmt.Print("Checking API responsiveness... ")
+	}
 	start := time.Now()
 	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	err = client.Ping(pingCtx)
 	pingCancel()
 	elapsed := time.Since(start)
 	if err != nil {
-		fmt.Println(errorStyle.Render("TIMEOUT"))
+		if textMode {
+			fmt.Println(errorStyle.Render("TIMEOUT"))
+		}
 		results = append(results, DiagnosticResult{
 			Name:    "API Response",
 			Status:  "error",
@@ -272,7 +355,9 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 			Details: "The Docker daemon may be overloaded or unresponsive",
 		})
 	} else if elapsed > 500*time.Millisecond {
-		fmt.Println(warnStyle.Render(fmt.Sprintf("%dms", elapsed.Milliseconds())))
+		if textMode {
+			fmt.Println(warnStyle.Render(fmt.Sprintf("%dms", elapsed.Milliseconds())))
+		}
 		results = append(results, DiagnosticResult{
 			Name:    "API Response",
 			Status:  "warn",
@@ -280,7 +365,9 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 			Details: "Docker daemon may be under heavy load",
 		})
 	} else {
-		fmt.Println(okStyle.Render(fmt.Sprintf("%dms", elapsed.Milliseconds())))
+		if textMode {
+			fmt.Println(okStyle.Render(fmt.Sprintf("%dms", elapsed.Milliseconds())))
+		}
 		results = append(results, DiagnosticResult{
 			Name:    "API Response",
 			Status:  "ok",
@@ -289,12 +376,16 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check 10: Memory limits (Docker Desktop)
-	fmt.Print("Checking memory configuration... ")
+	if textMode {
+		fmt.Print("Checking memory configuration... ")
+	}
 	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
 		if info.MemTotal > 0 {
 			memGB := float64(info.MemTotal) / (1024 * 1024 * 1024)
 			if memGB < 2 {
-				fmt.Println(warnStyle.Render(fmt.Sprintf("%.1fGB allocated", memGB)))
+				if textMode {
+					fmt.Println(warnStyle.Render(fmt.Sprintf("%.1fGB allocated", memGB)))
+				}
 				results = append(results, DiagnosticResult{
 					Name:    "Memory",
 					Status:  "warn",
@@ -302,7 +393,9 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 					Details: "Consider increasing Docker Desktop memory allocation",
 				})
 			} else {
-				fmt.Println(okStyle.Render(fmt.Sprintf("%.1fGB", memGB)))
+				if textMode {
+					fmt.Println(okStyle.Render(fmt.Sprintf("%.1fGB", memGB)))
+				}
 				results = append(results, DiagnosticResult{
 					Name:    "Memory",
 					Status:  "ok",
@@ -310,10 +403,14 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 				})
 			}
 		} else {
-			fmt.Println(infoStyle.Render("N/A"))
+			if textMode {
+				fmt.Println(infoStyle.Render("N/A"))
+			}
 		}
 	} else {
-		fmt.Println(okStyle.Render("Native"))
+		if textMode {
+			fmt.Println(okStyle.Render("Native"))
+		}
 		results = append(results, DiagnosticResult{
 			Name:    "Memory",
 			Status:  "ok",
@@ -321,8 +418,42 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 		})
 	}
 
+	// Structured output for JSON/YAML
+	if !textMode {
+		return outputDiagnoseStructured(outputFormat, results)
+	}
+
 	// Print summary
 	printDiagnosticSummary(results, verbose)
+	return nil
+}
+
+func outputDiagnoseStructured(outputFormat string, results []DiagnosticResult) error {
+	passed, warnings, errors := 0, 0, 0
+	for _, r := range results {
+		switch r.Status {
+		case "ok":
+			passed++
+		case "warn":
+			warnings++
+		case "error":
+			errors++
+		}
+	}
+	output := DiagnoseOutput{
+		Results: results,
+		Summary: DiagnoseSummary{
+			Passed:   passed,
+			Warnings: warnings,
+			Errors:   errors,
+		},
+	}
+	switch outputFormat {
+	case "json":
+		return format.FormatJSON(os.Stdout, output)
+	case "yaml":
+		return format.FormatYAML(os.Stdout, output)
+	}
 	return nil
 }
 

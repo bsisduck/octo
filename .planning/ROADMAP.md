@@ -105,12 +105,14 @@ Plans:
   5. Running any command with `--no-color` produces output with zero ANSI escape sequences
   6. Slow operations (Docker API calls > 500ms) show a loading spinner instead of a frozen terminal
   7. Volume sizes in the analyze view reflect actual disk usage (from DiskUsage API, not the always-zero volume list API)
-**Plans**: 3 plans in 1 wave
+**Plans**: 5 plans in 1 wave
 
 Plans:
-- [ ] 04-01-PLAN.md — Container logs viewer with streaming, follow mode, ring buffer, search (simple text + regex), and export to ~/.octo/logs/
-- [ ] 04-02-PLAN.md — Metrics display (CPU%, memory with trends), list filtering with smart detection, volume size fix via DiskUsage API, loading spinners
-- [ ] 04-03-PLAN.md — JSON/YAML output with --output-format flag, fully qualified field names (containerId, containerName), --no-color working correctly
+- [x] 04-01-PLAN.md — Container logs viewer with streaming, follow mode, ring buffer, search (simple text + regex), and export to ~/.octo/logs/
+- [x] 04-02-PLAN.md — Metrics display (CPU%, memory with trends), list filtering with smart detection, volume size fix via DiskUsage API, loading spinners
+- [x] 04-03-PLAN.md — JSON/YAML output with --output-format flag, fully qualified field names (containerId, containerName), --no-color working correctly
+- [ ] 04-04-PLAN.md — [GAP CLOSURE] Ring buffer + TUI logs model (follow/search/export) missing from 04-01 execution
+- [ ] 04-05-PLAN.md — [GAP CLOSURE] JSON struct tags on domain types + analyze command JSON/YAML output
 
 **Key Risks**:
 - Pitfall MP5: Log streaming without backpressure can consume unbounded memory. Use a ring buffer with configurable max size (5000 lines default).

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -20,6 +21,8 @@ import (
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // Compile-time interface check
@@ -28,8 +31,10 @@ var _ DockerService = (*Client)(nil)
 // Client wraps the Docker SDK client with helper methods.
 // It uses the DockerAPI interface internally for testability.
 type Client struct {
-	api            DockerAPI
-	diskUsageCache *DiskUsageCache
+	api                DockerAPI
+	diskUsageCache     *DiskUsageCache
+	volumeSizes        map[string]int64
+	volumeSizesFetched time.Time
 }
 
 // NewClient creates a new Docker client with automatic socket detection.
@@ -102,13 +107,7 @@ func (c *Client) ListContainers(ctx context.Context, all bool) ([]ContainerInfo,
 
 	result := make([]ContainerInfo, len(containers))
 	for i, c := range containers {
-		name := ""
-		if len(c.Names) > 0 {
-			name = c.Names[0]
-			if len(name) > 0 && name[0] == '/' {
-				name = name[1:]
-			}
-		}
+		name := extractContainerName(c.Names)
 
 		ports := formatPorts(c.Ports)
 
@@ -204,15 +203,11 @@ func (c *Client) ListVolumes(ctx context.Context) ([]VolumeInfo, error) {
 
 // getVolumeSizes returns a map of volume name to size using DiskUsage API with caching.
 func (c *Client) getVolumeSizes(ctx context.Context) map[string]int64 {
-	sizes := make(map[string]int64)
-
-	// Try cache first
-	if c.diskUsageCache != nil {
-		if cached := c.diskUsageCache.Get(); cached != nil {
-			// Cache hit but doesn't have per-volume breakdown, need raw DiskUsage
-			// Fall through to fetch
-		}
+	if c.volumeSizes != nil && time.Since(c.volumeSizesFetched) < 10*time.Second {
+		return c.volumeSizes
 	}
+
+	sizes := make(map[string]int64)
 
 	du, err := c.api.DiskUsage(ctx, types.DiskUsageOptions{})
 	if err != nil {
@@ -225,6 +220,8 @@ func (c *Client) getVolumeSizes(ctx context.Context) map[string]int64 {
 		}
 	}
 
+	c.volumeSizes = sizes
+	c.volumeSizesFetched = time.Now()
 	return sizes
 }
 
@@ -252,6 +249,13 @@ func (c *Client) ListNetworks(ctx context.Context) ([]NetworkInfo, error) {
 
 // GetDiskUsage returns Docker disk usage information.
 func (c *Client) GetDiskUsage(ctx context.Context) (*DiskUsageInfo, error) {
+	// Check cache first
+	if c.diskUsageCache != nil {
+		if cached := c.diskUsageCache.Get(); cached != nil {
+			return cached, nil
+		}
+	}
+
 	du, err := c.api.DiskUsage(ctx, types.DiskUsageOptions{})
 	if err != nil {
 		return nil, err
@@ -289,6 +293,11 @@ func (c *Client) GetDiskUsage(ctx context.Context) (*DiskUsageInfo, error) {
 	}
 
 	info.Total = info.Images + info.Containers + info.Volumes + info.BuildCache
+
+	// Store in cache
+	if c.diskUsageCache != nil {
+		c.diskUsageCache.Set(info)
+	}
 
 	return info, nil
 }
@@ -330,13 +339,7 @@ func (c *Client) GetStoppedContainers(ctx context.Context) ([]ContainerInfo, err
 
 	result := make([]ContainerInfo, len(containers))
 	for i, ct := range containers {
-		name := ""
-		if len(ct.Names) > 0 {
-			name = ct.Names[0]
-			if len(name) > 0 && name[0] == '/' {
-				name = name[1:]
-			}
-		}
+		name := extractContainerName(ct.Names)
 		result[i] = ContainerInfo{
 			ID:      truncateID(ct.ID, 12),
 			Name:    name,
@@ -383,24 +386,18 @@ func (c *Client) GetUnusedVolumes(ctx context.Context) ([]VolumeInfo, error) {
 // where a container's state may change between confirmation and actual deletion.
 func (c *Client) RemoveContainer(ctx context.Context, id string, force bool) error {
 	// Re-check: Fetch current state before deletion (TOCTOU protection)
-	containers, err := c.api.ContainerList(ctx, container.ListOptions{All: true})
+	f := filters.NewArgs()
+	f.Add("id", id)
+	containers, err := c.api.ContainerList(ctx, container.ListOptions{All: true, Filters: f})
 	if err != nil {
 		return fmt.Errorf("failed to re-check container state before deletion: %w", err)
 	}
 
-	// Find the container to verify it still exists and check its current state
-	var targetContainer *types.Container
-	for _, ct := range containers {
-		if truncateID(ct.ID, 12) == id || ct.ID == id {
-			t := ct
-			targetContainer = &t
-			break
-		}
-	}
-
-	if targetContainer == nil {
+	if len(containers) == 0 {
 		return fmt.Errorf("container not found")
 	}
+
+	targetContainer := &containers[0]
 
 	// If force is false and container is running, prevent deletion
 	if !force && targetContainer.State == "running" {
@@ -484,31 +481,19 @@ func (c *Client) RemoveNetworkDryRun(ctx context.Context, id string) (Confirmati
 
 // RemoveContainerDryRun returns confirmation info for container removal without deleting
 func (c *Client) RemoveContainerDryRun(ctx context.Context, id string) (ConfirmationInfo, error) {
-	containers, err := c.api.ContainerList(ctx, container.ListOptions{All: true})
+	f := filters.NewArgs()
+	f.Add("id", id)
+	containers, err := c.api.ContainerList(ctx, container.ListOptions{All: true, Filters: f})
 	if err != nil {
 		return ConfirmationInfo{}, err
 	}
 
-	var target *types.Container
-	for _, ct := range containers {
-		if truncateID(ct.ID, 12) == id || ct.ID == id {
-			t := ct
-			target = &t
-			break
-		}
-	}
-
-	if target == nil {
+	if len(containers) == 0 {
 		return ConfirmationInfo{}, fmt.Errorf("container not found")
 	}
 
-	name := ""
-	if len(target.Names) > 0 {
-		name = target.Names[0]
-		if len(name) > 0 && name[0] == '/' {
-			name = name[1:]
-		}
-	}
+	target := &containers[0]
+	name := extractContainerName(target.Names)
 
 	tier := TierLowRisk
 	reversible := true
@@ -523,7 +508,7 @@ func (c *Client) RemoveContainerDryRun(ctx context.Context, id string) (Confirma
 	info := ConfirmationInfo{
 		Tier:             tier,
 		Title:            "Delete Container?",
-		Description:      fmt.Sprintf("%s container '%s' (%s)", strings.Title(target.State), name, target.Image),
+		Description:      fmt.Sprintf("%s container '%s' (%s)", cases.Title(language.English).String(target.State), name, target.Image),
 		Resources:        []string{fmt.Sprintf("container: %s", name), fmt.Sprintf("image: %s", target.Image), fmt.Sprintf("size: %s", formatBytes(target.SizeRw))},
 		Reversible:       reversible,
 		UndoInstructions: undoInstructions,
@@ -782,82 +767,55 @@ func (c *Client) RestartContainer(ctx context.Context, id string) error {
 	return c.api.ContainerRestart(ctx, id, container.StopOptions{})
 }
 
-// StartComposeProject starts all stopped containers in a Compose project.
-// Skips already-running containers. Returns count of containers started.
-func (c *Client) StartComposeProject(ctx context.Context, projectName string) (int, error) {
+// composeProjectOp applies an operation to containers in a Compose project.
+// shouldProcess determines which containers to act on.
+func (c *Client) composeProjectOp(ctx context.Context, projectName string, shouldProcess func(ContainerInfo) bool, op func(ctx context.Context, id string) error, opName string) (int, error) {
 	containers, err := c.ListContainers(ctx, true)
 	if err != nil {
 		return 0, fmt.Errorf("failed to list containers: %w", err)
 	}
 
-	started := 0
+	count := 0
 	for _, ct := range containers {
-		if ct.Labels == nil {
+		if ct.Labels == nil || ct.Labels[ComposeProjectLabel] != projectName {
 			continue
 		}
-		if ct.Labels[ComposeProjectLabel] != projectName {
+		if !shouldProcess(ct) {
 			continue
 		}
-		if ct.State == "running" {
-			continue // skip already running
+		if err := op(ctx, ct.ID); err != nil {
+			return count, fmt.Errorf("failed to %s container %s: %w", opName, ct.Name, err)
 		}
-		if err := c.api.ContainerStart(ctx, ct.ID, container.StartOptions{}); err != nil {
-			return started, fmt.Errorf("failed to start container %s: %w", ct.Name, err)
-		}
-		started++
+		count++
 	}
-	return started, nil
+	return count, nil
+}
+
+// StartComposeProject starts all stopped containers in a Compose project.
+func (c *Client) StartComposeProject(ctx context.Context, projectName string) (int, error) {
+	return c.composeProjectOp(ctx, projectName,
+		func(ct ContainerInfo) bool { return ct.State != "running" },
+		func(ctx context.Context, id string) error {
+			return c.api.ContainerStart(ctx, id, container.StartOptions{})
+		}, "start")
 }
 
 // StopComposeProject stops all running containers in a Compose project.
-// Skips already-stopped containers. Returns count of containers stopped.
 func (c *Client) StopComposeProject(ctx context.Context, projectName string) (int, error) {
-	containers, err := c.ListContainers(ctx, true)
-	if err != nil {
-		return 0, fmt.Errorf("failed to list containers: %w", err)
-	}
-
-	stopped := 0
-	for _, ct := range containers {
-		if ct.Labels == nil {
-			continue
-		}
-		if ct.Labels[ComposeProjectLabel] != projectName {
-			continue
-		}
-		if ct.State != "running" {
-			continue // skip non-running
-		}
-		if err := c.api.ContainerStop(ctx, ct.ID, container.StopOptions{}); err != nil {
-			return stopped, fmt.Errorf("failed to stop container %s: %w", ct.Name, err)
-		}
-		stopped++
-	}
-	return stopped, nil
+	return c.composeProjectOp(ctx, projectName,
+		func(ct ContainerInfo) bool { return ct.State == "running" },
+		func(ctx context.Context, id string) error {
+			return c.api.ContainerStop(ctx, id, container.StopOptions{})
+		}, "stop")
 }
 
 // RestartComposeProject restarts all containers in a Compose project.
-// Returns count of containers restarted.
 func (c *Client) RestartComposeProject(ctx context.Context, projectName string) (int, error) {
-	containers, err := c.ListContainers(ctx, true)
-	if err != nil {
-		return 0, fmt.Errorf("failed to list containers: %w", err)
-	}
-
-	restarted := 0
-	for _, ct := range containers {
-		if ct.Labels == nil {
-			continue
-		}
-		if ct.Labels[ComposeProjectLabel] != projectName {
-			continue
-		}
-		if err := c.api.ContainerRestart(ctx, ct.ID, container.StopOptions{}); err != nil {
-			return restarted, fmt.Errorf("failed to restart container %s: %w", ct.Name, err)
-		}
-		restarted++
-	}
-	return restarted, nil
+	return c.composeProjectOp(ctx, projectName,
+		func(ct ContainerInfo) bool { return true },
+		func(ctx context.Context, id string) error {
+			return c.api.ContainerRestart(ctx, id, container.StopOptions{})
+		}, "restart")
 }
 
 // PruneContainers removes all stopped containers.
@@ -1007,7 +965,7 @@ func (c *Client) GetContainerStats(ctx context.Context, containerID string) (*Co
 	}
 	defer statsResp.Body.Close()
 
-	var stats types.StatsJSON
+	var stats container.StatsResponse
 	if err := json.NewDecoder(statsResp.Body).Decode(&stats); err != nil {
 		return nil, fmt.Errorf("failed to decode stats: %w", err)
 	}
@@ -1105,11 +1063,9 @@ func parseTimestampedLine(line, stream string) LogEntry {
 
 // sortLogEntries sorts log entries by timestamp
 func sortLogEntries(entries []LogEntry) {
-	for i := 1; i < len(entries); i++ {
-		for j := i; j > 0 && entries[j].Timestamp.Before(entries[j-1].Timestamp); j-- {
-			entries[j], entries[j-1] = entries[j-1], entries[j]
-		}
-	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Timestamp.Before(entries[j].Timestamp)
+	})
 }
 
 // Helper functions
@@ -1127,9 +1083,7 @@ func truncateID(id string, maxLen int) string {
 // and returns up to 12 characters.
 func trimImageID(id string) string {
 	const prefix = "sha256:"
-	if strings.HasPrefix(id, prefix) {
-		id = id[len(prefix):]
-	}
+	id = strings.TrimPrefix(id, prefix)
 	return truncateID(id, 12)
 }
 
@@ -1139,18 +1093,18 @@ func formatPorts(ports []types.Port) string {
 		return ""
 	}
 
-	result := ""
+	var b strings.Builder
 	for i, p := range ports {
 		if i > 0 {
-			result += ", "
+			b.WriteString(", ")
 		}
 		if p.PublicPort != 0 {
-			result += fmt.Sprintf("%d->%d/%s", p.PublicPort, p.PrivatePort, p.Type)
+			fmt.Fprintf(&b, "%d->%d/%s", p.PublicPort, p.PrivatePort, p.Type)
 		} else {
-			result += fmt.Sprintf("%d/%s", p.PrivatePort, p.Type)
+			fmt.Fprintf(&b, "%d/%s", p.PrivatePort, p.Type)
 		}
 	}
-	return result
+	return b.String()
 }
 
 // parseImageTag splits a Docker image tag into repository and tag components.
@@ -1164,6 +1118,19 @@ func parseImageTag(tag string) (repo, tagName string) {
 		}
 	}
 	return tag, "latest"
+}
+
+// extractContainerName returns the container name from Docker's Names slice,
+// stripping the leading "/" prefix that Docker adds.
+func extractContainerName(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	name := names[0]
+	if len(name) > 0 && name[0] == '/' {
+		return name[1:]
+	}
+	return name
 }
 
 // formatBytes formats a byte count into human-readable format

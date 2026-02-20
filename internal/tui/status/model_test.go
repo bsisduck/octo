@@ -5,9 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bsisduck/octo/internal/docker"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/bsisduck/octo/internal/docker"
 )
 
 // TestStatus_NewCreatesModel tests New creates a model
@@ -201,17 +202,24 @@ func TestStatus_CancelsFetchOnQuit(t *testing.T) {
 func TestStatus_CountsRunningContainers(t *testing.T) {
 	mock := &docker.MockDockerService{}
 	m := New(mock, false)
-
-	m.containers = []docker.ContainerInfo{
-		{State: "running"},
-		{State: "running"},
-		{State: "exited"},
-		{State: "created"},
-	}
 	m.width = 60
 	m.height = 30
 
-	view := m.View()
+	// Use Update with DataMsg so cached counts are computed
+	msg := DataMsg{
+		Containers: []docker.ContainerInfo{
+			{State: "running"},
+			{State: "running"},
+			{State: "exited"},
+			{State: "created"},
+		},
+		Images:  []docker.ImageInfo{},
+		Volumes: []docker.VolumeInfo{},
+	}
+	updated, _ := m.Update(msg)
+	model := updated.(Model)
+
+	view := model.View()
 
 	assert.Contains(t, view, "2")
 }

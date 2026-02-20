@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/bsisduck/octo/internal/ui/styles"
 	"github.com/spf13/cobra"
+
+	"github.com/bsisduck/octo/internal/ui/styles"
 )
 
 var (
@@ -79,7 +80,7 @@ func init() {
 	rootCmd.PersistentFlags().String("output-format", "text", "Output format: text, json, yaml")
 
 	// Register completion for output-format flag
-	rootCmd.RegisterFlagCompletionFunc("output-format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	_ = rootCmd.RegisterFlagCompletionFunc("output-format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"text", "json", "yaml"}, cobra.ShellCompDirectiveDefault
 	})
 
@@ -120,8 +121,7 @@ func runInteractiveMenu() error {
 	case "diagnose":
 		return diagnoseCmd.RunE(diagnoseCmd, nil)
 	case "version":
-		versionCmd.Run(versionCmd, nil) // version is safe/simple, kept as Run for now or update later
-		return nil
+		return versionCmd.RunE(versionCmd, nil)
 	default:
 		return fmt.Errorf("unknown action: %s", action)
 	}

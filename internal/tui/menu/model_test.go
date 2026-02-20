@@ -3,9 +3,10 @@ package menu
 import (
 	"testing"
 
-	"github.com/bsisduck/octo/internal/docker"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/bsisduck/octo/internal/docker"
 )
 
 // TestMenu_New creates a new menu model

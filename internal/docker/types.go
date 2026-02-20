@@ -92,7 +92,7 @@ func (t SafetyTier) String() string {
 // LogEntry represents a single log line from a container
 type LogEntry struct {
 	Timestamp time.Time `json:"logTimestamp" yaml:"logTimestamp"`
-	Stream    string    `json:"logStream" yaml:"logStream"`    // "stdout" or "stderr"
+	Stream    string    `json:"logStream" yaml:"logStream"` // "stdout" or "stderr"
 	Content   string    `json:"logContent" yaml:"logContent"`
 }
 
@@ -143,8 +143,8 @@ func (c *DiskUsageCache) Set(data *DiskUsageInfo) {
 
 // ExecOptions configures an interactive exec session
 type ExecOptions struct {
-	ContainerID string
-	Shell       string // "/bin/sh" or "/bin/bash"
+	ContainerID string `json:"execContainerId" yaml:"execContainerId"`
+	Shell       string `json:"execShell" yaml:"execShell"` // "/bin/sh" or "/bin/bash"
 }
 
 // Docker Compose label constants
@@ -155,8 +155,8 @@ const (
 
 // ComposeGroup groups containers belonging to the same Docker Compose project
 type ComposeGroup struct {
-	ProjectName string
-	Containers  []ContainerInfo
+	ProjectName string          `json:"composeProjectName" yaml:"composeProjectName"`
+	Containers  []ContainerInfo `json:"composeContainers" yaml:"composeContainers"`
 }
 
 // GroupByComposeProject splits containers into Compose groups and ungrouped.
@@ -193,10 +193,10 @@ func GroupByComposeProject(containers []ContainerInfo) (groups []ComposeGroup, u
 // ConfirmationInfo holds confirmation details for destructive operation
 type ConfirmationInfo struct {
 	Tier             SafetyTier `json:"confirmationTier" yaml:"confirmationTier"`
-	Title            string     `json:"confirmationTitle" yaml:"confirmationTitle"`            // "Delete Container?"
-	Description      string     `json:"confirmationDescription" yaml:"confirmationDescription"` // "Stopped container 'web' (500MB)"
-	Resources        []string   `json:"confirmationResources" yaml:"confirmationResources"`     // ["container: web", "size: 500MB"]
-	Reversible       bool       `json:"confirmationReversible" yaml:"confirmationReversible"`   // Can action be undone?
+	Title            string     `json:"confirmationTitle" yaml:"confirmationTitle"`                       // "Delete Container?"
+	Description      string     `json:"confirmationDescription" yaml:"confirmationDescription"`           // "Stopped container 'web' (500MB)"
+	Resources        []string   `json:"confirmationResources" yaml:"confirmationResources"`               // ["container: web", "size: 500MB"]
+	Reversible       bool       `json:"confirmationReversible" yaml:"confirmationReversible"`             // Can action be undone?
 	UndoInstructions string     `json:"confirmationUndoInstructions" yaml:"confirmationUndoInstructions"` // "Can be recreated from image"
-	Warnings         []string   `json:"confirmationWarnings" yaml:"confirmationWarnings"`       // Additional warnings
+	Warnings         []string   `json:"confirmationWarnings" yaml:"confirmationWarnings"`                 // Additional warnings
 }

@@ -3,13 +3,39 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
-	"github.com/bsisduck/octo/internal/docker"
-	"github.com/bsisduck/octo/internal/ui/styles"
 	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
+
+	"github.com/bsisduck/octo/internal/docker"
+	"github.com/bsisduck/octo/internal/ui/format"
+	"github.com/bsisduck/octo/internal/ui/styles"
 )
+
+// PruneOutput holds structured prune data for JSON/YAML output
+type PruneOutput struct {
+	DryRun         bool          `json:"dry_run" yaml:"dry_run"`
+	DiskBefore     PruneDisk     `json:"disk_before" yaml:"disk_before"`
+	Results        []PruneResult `json:"results" yaml:"results"`
+	TotalReclaimed uint64        `json:"total_reclaimed_bytes" yaml:"total_reclaimed_bytes"`
+}
+
+type PruneDisk struct {
+	Images      int64 `json:"images_bytes" yaml:"images_bytes"`
+	Containers  int64 `json:"containers_bytes" yaml:"containers_bytes"`
+	Volumes     int64 `json:"volumes_bytes" yaml:"volumes_bytes"`
+	BuildCache  int64 `json:"build_cache_bytes" yaml:"build_cache_bytes"`
+	Total       int64 `json:"total_bytes" yaml:"total_bytes"`
+	Reclaimable int64 `json:"reclaimable_bytes" yaml:"reclaimable_bytes"`
+}
+
+type PruneResult struct {
+	Resource  string `json:"resource" yaml:"resource"`
+	Reclaimed uint64 `json:"reclaimed_bytes" yaml:"reclaimed_bytes"`
+	Error     string `json:"error,omitempty" yaml:"error,omitempty"`
+}
 
 var pruneCmd = &cobra.Command{
 	Use:   "prune",
@@ -38,21 +64,7 @@ func runPrune(cmd *cobra.Command, args []string) error {
 	force, _ := cmd.Flags().GetBool("force")
 	pruneVolumes, _ := cmd.Flags().GetBool("volumes")
 	all, _ := cmd.Flags().GetBool("all")
-
-	// Styles (defined in internal/ui/styles/theme.go)
-	titleStyle := styles.Title
-	warnStyle := styles.Warn
-	successStyle := styles.Success
-	infoStyle := styles.Info
-
-	fmt.Println()
-	fmt.Println(titleStyle.Render("🐙 Octo Deep Prune"))
-	fmt.Println(strings.Repeat("─", 50))
-
-	if IsDryRun() {
-		fmt.Println(styles.Warning.Render("DRY RUN MODE - No changes will be made"))
-		fmt.Println()
-	}
+	outputFormat, _ := cmd.Flags().GetString("output-format")
 
 	client, err := docker.NewClient()
 	if err != nil {
@@ -66,6 +78,26 @@ func runPrune(cmd *cobra.Command, args []string) error {
 	usageBefore, err := client.GetDiskUsage(ctx)
 	if err != nil {
 		return fmt.Errorf("error getting disk usage: %w", err)
+	}
+
+	// JSON/YAML output path
+	if outputFormat == "json" || outputFormat == "yaml" {
+		return runPruneStructured(cmd, client, ctx, usageBefore, outputFormat, pruneVolumes, all, force)
+	}
+
+	// Text output (default)
+	titleStyle := styles.Title
+	warnStyle := styles.Warn
+	successStyle := styles.Success
+	infoStyle := styles.Info
+
+	fmt.Println()
+	fmt.Println(titleStyle.Render("🐙 Octo Deep Prune"))
+	fmt.Println(strings.Repeat("─", 50))
+
+	if IsDryRun() {
+		fmt.Println(styles.Warning.Render("DRY RUN MODE - No changes will be made"))
+		fmt.Println()
 	}
 
 	fmt.Println()
@@ -182,4 +214,102 @@ func runPrune(cmd *cobra.Command, args []string) error {
 	fmt.Println(successStyle.Render(fmt.Sprintf("Total space reclaimed: %s", humanize.Bytes(totalReclaimed))))
 	fmt.Println()
 	return nil
+}
+
+func runPruneStructured(_ *cobra.Command, client *docker.Client, ctx context.Context, usageBefore *docker.DiskUsageInfo, outputFormat string, pruneVolumes bool, all bool, force bool) error {
+	diskBefore := PruneDisk{
+		Images:      usageBefore.Images,
+		Containers:  usageBefore.Containers,
+		Volumes:     usageBefore.Volumes,
+		BuildCache:  usageBefore.BuildCache,
+		Total:       usageBefore.Total,
+		Reclaimable: usageBefore.TotalReclaimable,
+	}
+
+	// Dry-run: output disk-before with empty results
+	if IsDryRun() {
+		output := PruneOutput{
+			DryRun:     true,
+			DiskBefore: diskBefore,
+			Results:    []PruneResult{},
+		}
+		return formatPruneOutput(outputFormat, output)
+	}
+
+	// Confirmation for non-force mode: skip in JSON/YAML (require --force)
+	if !force {
+		return fmt.Errorf("--force flag is required for JSON/YAML output mode")
+	}
+
+	var results []PruneResult
+	var totalReclaimed uint64
+
+	// Prune containers
+	containerReclaimed, err := client.PruneContainers(ctx)
+	result := PruneResult{Resource: "containers", Reclaimed: containerReclaimed}
+	if err != nil {
+		result.Error = err.Error()
+	} else {
+		totalReclaimed += containerReclaimed
+	}
+	results = append(results, result)
+
+	// Prune images
+	imageReclaimed, err := client.PruneImages(ctx, all)
+	result = PruneResult{Resource: "images", Reclaimed: imageReclaimed}
+	if err != nil {
+		result.Error = err.Error()
+	} else {
+		totalReclaimed += imageReclaimed
+	}
+	results = append(results, result)
+
+	// Prune volumes
+	if pruneVolumes {
+		volumeReclaimed, volErr := client.PruneVolumes(ctx)
+		result = PruneResult{Resource: "volumes", Reclaimed: volumeReclaimed}
+		if volErr != nil {
+			result.Error = volErr.Error()
+		} else {
+			totalReclaimed += volumeReclaimed
+		}
+		results = append(results, result)
+	}
+
+	// Prune networks
+	netErr := client.PruneNetworks(ctx)
+	result = PruneResult{Resource: "networks", Reclaimed: 0}
+	if netErr != nil {
+		result.Error = netErr.Error()
+	}
+	results = append(results, result)
+
+	// Prune build cache
+	cacheReclaimed, err := client.PruneBuildCache(ctx, all)
+	result = PruneResult{Resource: "build_cache", Reclaimed: cacheReclaimed}
+	if err != nil {
+		result.Error = err.Error()
+	} else {
+		totalReclaimed += cacheReclaimed
+	}
+	results = append(results, result)
+
+	output := PruneOutput{
+		DryRun:         false,
+		DiskBefore:     diskBefore,
+		Results:        results,
+		TotalReclaimed: totalReclaimed,
+	}
+	return formatPruneOutput(outputFormat, output)
+}
+
+func formatPruneOutput(outputFormat string, output PruneOutput) error {
+	switch outputFormat {
+	case "json":
+		return format.FormatJSON(os.Stdout, output)
+	case "yaml":
+		return format.FormatYAML(os.Stdout, output)
+	default:
+		return fmt.Errorf("unsupported output format: %s", outputFormat)
+	}
 }

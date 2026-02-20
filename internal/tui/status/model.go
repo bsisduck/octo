@@ -6,10 +6,11 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/bsisduck/octo/internal/docker"
 	"github.com/bsisduck/octo/internal/ui/format"
 	"github.com/bsisduck/octo/internal/ui/styles"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 type Model struct {
@@ -28,6 +29,12 @@ type Model struct {
 	serverVersion string
 	osInfo        string
 	warnings      []string
+
+	// Cached computed counts (updated in Update, used in View)
+	runningCount  int
+	stoppedCount  int
+	danglingCount int
+	unusedCount   int
 }
 
 type tickMsg time.Time
@@ -42,9 +49,6 @@ type DataMsg struct {
 	Err           error
 	Warnings      []string
 }
-
-// Exported for testing
-type dataMsg = DataMsg
 
 func New(client docker.DockerService, watch bool) Model {
 	return Model{
@@ -141,6 +145,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.osInfo = msg.OsInfo
 			m.warnings = msg.Warnings
 			m.lastUpdated = time.Now()
+
+			// Cache computed counts
+			m.runningCount = 0
+			m.stoppedCount = 0
+			for _, c := range m.containers {
+				if c.State == "running" {
+					m.runningCount++
+				} else {
+					m.stoppedCount++
+				}
+			}
+			m.danglingCount = 0
+			for _, img := range m.images {
+				if img.Dangling {
+					m.danglingCount++
+				}
+			}
+			m.unusedCount = 0
+			for _, v := range m.volumes {
+				if !v.InUse {
+					m.unusedCount++
+				}
+			}
 		}
 	}
 	return m, nil
@@ -161,15 +188,8 @@ func (m Model) View() string {
 	b.WriteString("\n\n")
 
 	// Containers section
-	running := 0
-	stopped := 0
-	for _, c := range m.containers {
-		if c.State == "running" {
-			running++
-		} else {
-			stopped++
-		}
-	}
+	running := m.runningCount
+	stopped := m.stoppedCount
 
 	b.WriteString(styles.Section.Render("Containers"))
 	b.WriteString("\n")
@@ -181,12 +201,7 @@ func (m Model) View() string {
 	// Images section
 	b.WriteString(styles.Section.Render("Images"))
 	b.WriteString("\n")
-	dangling := 0
-	for _, img := range m.images {
-		if img.Dangling {
-			dangling++
-		}
-	}
+	dangling := m.danglingCount
 	b.WriteString(fmt.Sprintf("  %s %s\n", styles.Label.Render("Total:"), styles.Value.Render(fmt.Sprintf("%d", len(m.images)))))
 	b.WriteString(fmt.Sprintf("  %s %s\n", styles.Label.Render("Dangling:"), styles.Warning.Render(fmt.Sprintf("%d", dangling))))
 	if m.diskUsage != nil {
@@ -197,12 +212,7 @@ func (m Model) View() string {
 	// Volumes section
 	b.WriteString(styles.Section.Render("Volumes"))
 	b.WriteString("\n")
-	unused := 0
-	for _, v := range m.volumes {
-		if !v.InUse {
-			unused++
-		}
-	}
+	unused := m.unusedCount
 	b.WriteString(fmt.Sprintf("  %s %s\n", styles.Label.Render("Total:"), styles.Value.Render(fmt.Sprintf("%d", len(m.volumes)))))
 	b.WriteString(fmt.Sprintf("  %s %s\n", styles.Label.Render("Unused:"), styles.Warning.Render(fmt.Sprintf("%d", unused))))
 	if m.diskUsage != nil {

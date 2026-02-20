@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/bsisduck/octo/internal/docker"
-	"github.com/bsisduck/octo/internal/tui/common"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/bsisduck/octo/internal/docker"
+	"github.com/bsisduck/octo/internal/tui/common"
 )
 
 // TestAnalyze_NewCreatesModel tests New creates a model

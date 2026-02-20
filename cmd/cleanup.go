@@ -3,13 +3,33 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
-	"github.com/bsisduck/octo/internal/docker"
-	"github.com/bsisduck/octo/internal/ui/styles"
 	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
+
+	"github.com/bsisduck/octo/internal/docker"
+	"github.com/bsisduck/octo/internal/ui/format"
+	"github.com/bsisduck/octo/internal/ui/styles"
 )
+
+// CleanupOutput holds structured cleanup data for JSON/YAML output
+type CleanupOutput struct {
+	DryRun         bool             `json:"dry_run" yaml:"dry_run"`
+	Sections       []CleanupSection `json:"sections" yaml:"sections"`
+	TotalReclaimed uint64           `json:"total_reclaimed_bytes" yaml:"total_reclaimed_bytes"`
+}
+
+// CleanupSection holds data for a single cleanup category
+type CleanupSection struct {
+	Name      string   `json:"name" yaml:"name"`
+	Found     int      `json:"found" yaml:"found"`
+	Removed   int      `json:"removed" yaml:"removed"`
+	Reclaimed uint64   `json:"reclaimed_bytes" yaml:"reclaimed_bytes"`
+	Items     []string `json:"items" yaml:"items"`
+	Skipped   bool     `json:"skipped" yaml:"skipped"`
+}
 
 var cleanupCmd = &cobra.Command{
 	Use:   "cleanup",
@@ -43,25 +63,12 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 	networksOnly, _ := cmd.Flags().GetBool("networks")
 	buildCacheOnly, _ := cmd.Flags().GetBool("build-cache")
 	force, _ := cmd.Flags().GetBool("force")
+	outputFormat, _ := cmd.Flags().GetString("output-format")
 
 	// If no specific flag, clean all
 	cleanAll := !containersOnly && !imagesOnly && !volumesOnly && !networksOnly && !buildCacheOnly
 
-	// Styles (defined in internal/ui/styles/theme.go)
-	titleStyle := styles.Title
-	sectionStyle := styles.Section
-	successStyle := styles.Success
-	warnStyle := styles.Warning
-	infoStyle := styles.Info
-
-	fmt.Println()
-	fmt.Println(titleStyle.Render("🐙 Octo Cleanup"))
-	fmt.Println(strings.Repeat("─", 50))
-
-	if IsDryRun() {
-		fmt.Println(warnStyle.Render("DRY RUN MODE - No changes will be made"))
-		fmt.Println()
-	}
+	structured := outputFormat == "json" || outputFormat == "yaml"
 
 	client, err := docker.NewClient()
 	if err != nil {
@@ -72,18 +79,67 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
 	// Get current disk usage for comparison
-	initialUsage, _ := client.GetDiskUsage(ctx)
+	initialUsage, diskUsageErr := client.GetDiskUsage(ctx)
 
 	var totalReclaimed uint64
+	var output CleanupOutput
+	if structured {
+		output.DryRun = IsDryRun()
+	}
+
+	// Styles (defined in internal/ui/styles/theme.go) - only needed for text output
+	titleStyle := styles.Title
+	sectionStyle := styles.Section
+	successStyle := styles.Success
+	warnStyle := styles.Warning
+	infoStyle := styles.Info
+
+	if !structured {
+		fmt.Println()
+		fmt.Println(titleStyle.Render("🐙 Octo Cleanup"))
+		fmt.Println(strings.Repeat("─", 50))
+
+		if IsDryRun() {
+			fmt.Println(warnStyle.Render("DRY RUN MODE - No changes will be made"))
+			fmt.Println()
+		}
+	}
+
+	if diskUsageErr != nil && !structured {
+		fmt.Printf("  %s\n", warnStyle.Render(fmt.Sprintf("Warning: could not get initial disk usage: %v", diskUsageErr)))
+		fmt.Println()
+	}
 
 	// Clean stopped containers
 	if cleanAll || containersOnly {
-		fmt.Println()
-		fmt.Println(sectionStyle.Render("Stopped Containers"))
+		if !structured {
+			fmt.Println()
+			fmt.Println(sectionStyle.Render("Stopped Containers"))
+		}
 
 		stopped, err := client.GetStoppedContainers(ctx)
 		if err != nil {
-			fmt.Printf("  %s\n", warnStyle.Render(fmt.Sprintf("Error: %v", err)))
+			if !structured {
+				fmt.Printf("  %s\n", warnStyle.Render(fmt.Sprintf("Error: %v", err)))
+			}
+		} else if structured {
+			section := CleanupSection{
+				Name:  "stopped_containers",
+				Found: len(stopped),
+				Items: make([]string, 0, len(stopped)),
+			}
+			for _, c := range stopped {
+				section.Items = append(section.Items, fmt.Sprintf("%s (%s)", c.Name, c.ID))
+			}
+			if !IsDryRun() && len(stopped) > 0 {
+				reclaimed, pruneErr := client.PruneContainers(ctx)
+				if pruneErr == nil {
+					section.Removed = len(stopped)
+					section.Reclaimed = reclaimed
+					totalReclaimed += reclaimed
+				}
+			}
+			output.Sections = append(output.Sections, section)
 		} else if len(stopped) == 0 {
 			fmt.Printf("  %s\n", successStyle.Render("✓ No stopped containers"))
 		} else {
@@ -109,12 +165,34 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 
 	// Clean dangling images
 	if cleanAll || imagesOnly {
-		fmt.Println()
-		fmt.Println(sectionStyle.Render("Dangling Images"))
+		if !structured {
+			fmt.Println()
+			fmt.Println(sectionStyle.Render("Dangling Images"))
+		}
 
 		dangling, err := client.GetDanglingImages(ctx)
 		if err != nil {
-			fmt.Printf("  %s\n", warnStyle.Render(fmt.Sprintf("Error: %v", err)))
+			if !structured {
+				fmt.Printf("  %s\n", warnStyle.Render(fmt.Sprintf("Error: %v", err)))
+			}
+		} else if structured {
+			section := CleanupSection{
+				Name:  "dangling_images",
+				Found: len(dangling),
+				Items: make([]string, 0, len(dangling)),
+			}
+			for _, img := range dangling {
+				section.Items = append(section.Items, fmt.Sprintf("%s (%s)", img.ID, humanize.Bytes(uint64(img.Size))))
+			}
+			if !IsDryRun() && len(dangling) > 0 {
+				reclaimed, pruneErr := client.PruneImages(ctx, all)
+				if pruneErr == nil {
+					section.Removed = len(dangling)
+					section.Reclaimed = reclaimed
+					totalReclaimed += reclaimed
+				}
+			}
+			output.Sections = append(output.Sections, section)
 		} else if len(dangling) == 0 {
 			fmt.Printf("  %s\n", successStyle.Render("✓ No dangling images"))
 		} else {
@@ -142,12 +220,34 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 
 	// Clean unused volumes
 	if cleanAll || volumesOnly {
-		fmt.Println()
-		fmt.Println(sectionStyle.Render("Unused Volumes"))
+		if !structured {
+			fmt.Println()
+			fmt.Println(sectionStyle.Render("Unused Volumes"))
+		}
 
 		unused, err := client.GetUnusedVolumes(ctx)
 		if err != nil {
-			fmt.Printf("  %s\n", warnStyle.Render(fmt.Sprintf("Error: %v", err)))
+			if !structured {
+				fmt.Printf("  %s\n", warnStyle.Render(fmt.Sprintf("Error: %v", err)))
+			}
+		} else if structured {
+			section := CleanupSection{
+				Name:  "unused_volumes",
+				Found: len(unused),
+				Items: make([]string, 0, len(unused)),
+			}
+			for _, v := range unused {
+				section.Items = append(section.Items, v.Name)
+			}
+			if !IsDryRun() && len(unused) > 0 {
+				reclaimed, pruneErr := client.PruneVolumes(ctx)
+				if pruneErr == nil {
+					section.Removed = len(unused)
+					section.Reclaimed = reclaimed
+					totalReclaimed += reclaimed
+				}
+			}
+			output.Sections = append(output.Sections, section)
 		} else if len(unused) == 0 {
 			fmt.Printf("  %s\n", successStyle.Render("✓ No unused volumes"))
 		} else {
@@ -177,12 +277,16 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 
 	// Clean unused networks
 	if cleanAll || networksOnly {
-		fmt.Println()
-		fmt.Println(sectionStyle.Render("Unused Networks"))
+		if !structured {
+			fmt.Println()
+			fmt.Println(sectionStyle.Render("Unused Networks"))
+		}
 
 		networks, err := client.ListNetworks(ctx)
 		if err != nil {
-			fmt.Printf("  %s\n", warnStyle.Render(fmt.Sprintf("Error: %v", err)))
+			if !structured {
+				fmt.Printf("  %s\n", warnStyle.Render(fmt.Sprintf("Error: %v", err)))
+			}
 		} else {
 			unused := []docker.NetworkInfo{}
 			for _, n := range networks {
@@ -195,7 +299,23 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 				}
 			}
 
-			if len(unused) == 0 {
+			if structured {
+				section := CleanupSection{
+					Name:  "unused_networks",
+					Found: len(unused),
+					Items: make([]string, 0, len(unused)),
+				}
+				for _, n := range unused {
+					section.Items = append(section.Items, fmt.Sprintf("%s (%s)", n.Name, n.ID))
+				}
+				if !IsDryRun() && len(unused) > 0 {
+					pruneErr := client.PruneNetworks(ctx)
+					if pruneErr == nil {
+						section.Removed = len(unused)
+					}
+				}
+				output.Sections = append(output.Sections, section)
+			} else if len(unused) == 0 {
 				fmt.Printf("  %s\n", successStyle.Render("✓ No unused networks"))
 			} else {
 				fmt.Printf("  Found %d unused networks\n", len(unused))
@@ -219,31 +339,70 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 
 	// Clean build cache
 	if cleanAll || buildCacheOnly {
-		fmt.Println()
-		fmt.Println(sectionStyle.Render("Build Cache"))
+		if !structured {
+			fmt.Println()
+			fmt.Println(sectionStyle.Render("Build Cache"))
+		}
 
 		if initialUsage != nil && initialUsage.BuildCache > 0 {
-			fmt.Printf("  Current build cache: %s\n", humanize.Bytes(uint64(initialUsage.BuildCache)))
-
-			if !IsDryRun() && (force || confirmAction("Clear build cache?")) {
-				reclaimed, err := client.PruneBuildCache(ctx, all)
-				if err != nil {
-					fmt.Printf("  %s\n", warnStyle.Render(fmt.Sprintf("Error: %v", err)))
-				} else {
-					totalReclaimed += reclaimed
-					fmt.Printf("  %s\n", successStyle.Render(fmt.Sprintf("✓ Cleared build cache, reclaimed %s",
-						humanize.Bytes(reclaimed))))
+			if structured {
+				section := CleanupSection{
+					Name:  "build_cache",
+					Found: 1,
+					Items: []string{humanize.Bytes(uint64(initialUsage.BuildCache))},
 				}
-			} else if IsDryRun() {
-				fmt.Printf("  %s\n", infoStyle.Render(fmt.Sprintf("→ Would clear %s of build cache",
-					humanize.Bytes(uint64(initialUsage.BuildCache)))))
+				if !IsDryRun() {
+					reclaimed, pruneErr := client.PruneBuildCache(ctx, all)
+					if pruneErr == nil {
+						section.Removed = 1
+						section.Reclaimed = reclaimed
+						totalReclaimed += reclaimed
+					}
+				}
+				output.Sections = append(output.Sections, section)
+			} else {
+				fmt.Printf("  Current build cache: %s\n", humanize.Bytes(uint64(initialUsage.BuildCache)))
+
+				if !IsDryRun() && (force || confirmAction("Clear build cache?")) {
+					reclaimed, err := client.PruneBuildCache(ctx, all)
+					if err != nil {
+						fmt.Printf("  %s\n", warnStyle.Render(fmt.Sprintf("Error: %v", err)))
+					} else {
+						totalReclaimed += reclaimed
+						fmt.Printf("  %s\n", successStyle.Render(fmt.Sprintf("✓ Cleared build cache, reclaimed %s",
+							humanize.Bytes(reclaimed))))
+					}
+				} else if IsDryRun() {
+					fmt.Printf("  %s\n", infoStyle.Render(fmt.Sprintf("→ Would clear %s of build cache",
+						humanize.Bytes(uint64(initialUsage.BuildCache)))))
+				}
 			}
 		} else {
-			fmt.Printf("  %s\n", successStyle.Render("✓ No build cache"))
+			if structured {
+				output.Sections = append(output.Sections, CleanupSection{
+					Name:    "build_cache",
+					Found:   0,
+					Items:   []string{},
+					Skipped: true,
+				})
+			} else {
+				fmt.Printf("  %s\n", successStyle.Render("✓ No build cache"))
+			}
 		}
 	}
 
-	// Summary
+	// Output structured format
+	if structured {
+		output.TotalReclaimed = totalReclaimed
+		switch outputFormat {
+		case "json":
+			return format.FormatJSON(os.Stdout, output)
+		case "yaml":
+			return format.FormatYAML(os.Stdout, output)
+		}
+	}
+
+	// Text summary
 	fmt.Println()
 	fmt.Println(strings.Repeat("─", 50))
 	if IsDryRun() {

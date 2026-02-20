@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/bsisduck/octo/internal/docker"
-	"github.com/bsisduck/octo/internal/ui/styles"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dustin/go-humanize"
+
+	"github.com/bsisduck/octo/internal/docker"
+	"github.com/bsisduck/octo/internal/ui/styles"
 )
 
 type Model struct {
@@ -42,9 +43,6 @@ type InitMsg struct {
 	Volumes    int
 	Err        error
 }
-
-// Exported for testing
-type initMsg = InitMsg
 
 // New creates a new interactive menu model
 func New() Model {

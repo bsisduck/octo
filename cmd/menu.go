@@ -1,8 +1,9 @@
 package cmd
 
 import (
-	"github.com/bsisduck/octo/internal/tui/menu"
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/bsisduck/octo/internal/tui/menu"
 )
 
 // NewInteractiveMenu creates a new interactive menu

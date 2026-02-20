@@ -35,9 +35,9 @@ type StreamErrMsg struct {
 
 // exportDoneMsg carries the result of the export operation.
 type exportDoneMsg struct {
-	path    string
-	count   int
-	err     error
+	path  string
+	count int
+	err   error
 }
 
 // clearStatusMsg clears the status message after a timeout.
@@ -59,15 +59,17 @@ type Model struct {
 	following bool // auto-scroll to latest line
 
 	filterText    string
-	filtering     bool   // currently typing in filter input
-	useRegex      bool   // regex vs text search toggle
+	filtering     bool // currently typing in filter input
+	useRegex      bool // regex vs text search toggle
 	compiledRegex *regexp.Regexp
 
 	err               error
 	statusMessage     string
 	truncationWarning string
 
-	logCancelFn func() // cancel for active stream goroutine
+	logCh       <-chan docker.LogEntry // persistent stream channel
+	errCh       <-chan error           // persistent stream error channel
+	logCancelFn func()                 // cancel for active stream goroutine
 }
 
 // New creates a logs model for the given container.
@@ -100,6 +102,8 @@ func (m Model) fetchInitialLogs() tea.Cmd {
 func (m *Model) startStream() tea.Cmd {
 	ctx := context.Background()
 	logCh, errCh, cancel := m.docker.StreamContainerLogs(ctx, m.containerID)
+	m.logCh = logCh
+	m.errCh = errCh
 	m.logCancelFn = cancel
 
 	return func() tea.Msg {
@@ -117,21 +121,17 @@ func (m *Model) startStream() tea.Cmd {
 
 // continueStream reads the next entry from the active stream.
 func (m Model) continueStream() tea.Cmd {
-	if m.logCancelFn == nil {
+	if m.logCh == nil {
 		return nil
 	}
-	ctx := context.Background()
-	logCh, errCh, cancel := m.docker.StreamContainerLogs(ctx, m.containerID)
-	m.logCancelFn = cancel
-
 	return func() tea.Msg {
 		select {
-		case entry, ok := <-logCh:
+		case entry, ok := <-m.logCh:
 			if !ok {
 				return StreamErrMsg{Err: nil}
 			}
 			return StreamLogMsg{Entry: entry}
-		case err := <-errCh:
+		case err := <-m.errCh:
 			return StreamErrMsg{Err: err}
 		}
 	}
@@ -401,8 +401,8 @@ func (m Model) exportLogs() tea.Cmd {
 		}
 
 		dir := filepath.Join(home, ".octo", "logs")
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return exportDoneMsg{err: fmt.Errorf("create dir: %w", err)}
+		if mkdirErr := os.MkdirAll(dir, 0o755); mkdirErr != nil {
+			return exportDoneMsg{err: fmt.Errorf("create dir: %w", mkdirErr)}
 		}
 
 		path := filepath.Join(dir, m.containerID+".log")

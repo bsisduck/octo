@@ -160,17 +160,11 @@ type LogStreamErrMsg struct {
 	Err error
 }
 
-// Exported for testing
-type dataMsg = DataMsg
-
 // ConfirmationMsg contains the result of a DryRun operation
 type ConfirmationMsg struct {
 	Info *docker.ConfirmationInfo
 	Err  error
 }
-
-// Exported for testing
-type confirmationMsg = ConfirmationMsg
 
 type Options struct {
 	TypeFilter string
@@ -1056,32 +1050,6 @@ func (m *Model) startLogStream() tea.Cmd {
 
 	return func() tea.Msg {
 		// Read from both channels
-		select {
-		case entry, ok := <-logCh:
-			if !ok {
-				return LogStreamErrMsg{Err: nil}
-			}
-			return LogStreamMsg{Entry: entry}
-		case err := <-errCh:
-			return LogStreamErrMsg{Err: err}
-		}
-	}
-}
-
-// continueLogStream continues reading from the stream.
-func (m Model) continueLogStream() tea.Cmd {
-	if !m.logFollowing || m.logCancelFn == nil {
-		return nil
-	}
-	ctx := context.Background()
-	logCh, errCh, cancel := m.docker.StreamContainerLogs(ctx, m.logContainerID)
-	// Cancel previous stream first
-	if m.logCancelFn != nil {
-		m.logCancelFn()
-	}
-	m.logCancelFn = cancel
-
-	return func() tea.Msg {
 		select {
 		case entry, ok := <-logCh:
 			if !ok {
