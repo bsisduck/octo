@@ -412,7 +412,7 @@ func (m Model) exportLogs() tea.Cmd {
 		if err != nil {
 			return exportDoneMsg{err: fmt.Errorf("create file: %w", err)}
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 
 		for _, line := range lines {
 			if _, err := fmt.Fprintln(f, line); err != nil {

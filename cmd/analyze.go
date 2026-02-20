@@ -47,7 +47,7 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("connecting to Docker: %w", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// Non-TUI path for JSON/YAML output
 	if outputFormat == "json" || outputFormat == "yaml" {

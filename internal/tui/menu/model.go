@@ -69,7 +69,7 @@ func (m Model) Init() tea.Cmd {
 		if err != nil {
 			return InitMsg{DockerOK: false, Err: err}
 		}
-		defer client.Close()
+		defer func() { _ = client.Close() }()
 
 		ctx := context.Background()
 
@@ -218,23 +218,23 @@ func (m Model) View() string {
 	} else if m.diskUsage != nil {
 		b.WriteString(styles.TitleWithMargin.Render("  Quick Stats"))
 		b.WriteString("\n")
-		b.WriteString(fmt.Sprintf("  %s %s\n",
+		fmt.Fprintf(&b, "  %s %s\n",
 			styles.StatLabel.Render("Containers:"),
-			styles.StatValue.Render(fmt.Sprintf("%d (%d running)", m.containers, m.running))))
-		b.WriteString(fmt.Sprintf("  %s %s\n",
+			styles.StatValue.Render(fmt.Sprintf("%d (%d running)", m.containers, m.running)))
+		fmt.Fprintf(&b, "  %s %s\n",
 			styles.StatLabel.Render("Images:"),
-			styles.StatValue.Render(fmt.Sprintf("%d", m.images))))
-		b.WriteString(fmt.Sprintf("  %s %s\n",
+			styles.StatValue.Render(fmt.Sprintf("%d", m.images)))
+		fmt.Fprintf(&b, "  %s %s\n",
 			styles.StatLabel.Render("Volumes:"),
-			styles.StatValue.Render(fmt.Sprintf("%d", m.volumes))))
-		b.WriteString(fmt.Sprintf("  %s %s\n",
+			styles.StatValue.Render(fmt.Sprintf("%d", m.volumes)))
+		fmt.Fprintf(&b, "  %s %s\n",
 			styles.StatLabel.Render("Disk Used:"),
-			styles.StatValue.Render(humanize.Bytes(uint64(m.diskUsage.Total)))))
+			styles.StatValue.Render(humanize.Bytes(uint64(m.diskUsage.Total))))
 		if m.diskUsage.TotalReclaimable > 0 {
-			b.WriteString(fmt.Sprintf("  %s %s\n",
+			fmt.Fprintf(&b, "  %s %s\n",
 				styles.StatLabel.Render("Reclaimable:"),
 				styles.Warning.Render(
-					humanize.Bytes(uint64(m.diskUsage.TotalReclaimable)))))
+					humanize.Bytes(uint64(m.diskUsage.TotalReclaimable))))
 		}
 		b.WriteString("\n")
 	}

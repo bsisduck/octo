@@ -10,6 +10,6 @@ import (
 func FormatYAML(w io.Writer, data interface{}) error {
 	encoder := yaml.NewEncoder(w)
 	encoder.SetIndent(2) // 2-space indentation
-	defer encoder.Close()
+	defer func() { _ = encoder.Close() }()
 	return encoder.Encode(data)
 }

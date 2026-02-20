@@ -70,7 +70,7 @@ func runPrune(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("error connecting to Docker: %w", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 

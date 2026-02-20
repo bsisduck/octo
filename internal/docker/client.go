@@ -67,7 +67,7 @@ func NewClient() (*Client, error) {
 	// Test connection with ping
 	_, err = cli.Ping(ctx)
 	if err != nil {
-		cli.Close()
+		_ = cli.Close()
 		return nil, fmt.Errorf("failed to connect to Docker daemon: %w", err)
 	}
 
@@ -878,7 +878,7 @@ func (c *Client) GetContainerLogs(ctx context.Context, containerID string, tail 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get container logs: %w", err)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	// Demultiplex stdout and stderr using stdcopy
 	var stdoutBuf, stderrBuf bytes.Buffer
@@ -890,7 +890,7 @@ func (c *Client) GetContainerLogs(ctx context.Context, containerID string, tail 
 		if err2 != nil {
 			return nil, fmt.Errorf("failed to re-fetch logs: %w", err2)
 		}
-		defer reader2.Close()
+		defer func() { _ = reader2.Close() }()
 		return parseLogLines(reader2, "stdout"), nil
 	}
 
@@ -927,7 +927,7 @@ func (c *Client) StreamContainerLogs(ctx context.Context, containerID string) (<
 			errCh <- fmt.Errorf("failed to stream logs: %w", err)
 			return
 		}
-		defer reader.Close()
+		defer func() { _ = reader.Close() }()
 
 		// Use a pipe to demux stdout/stderr
 		pr, pw := io.Pipe()
@@ -935,10 +935,10 @@ func (c *Client) StreamContainerLogs(ctx context.Context, containerID string) (<
 			_, err := stdcopy.StdCopy(pw, pw, reader)
 			if err != nil {
 				// TTY mode fallback: copy directly
-				pw.Close()
+				_ = pw.Close()
 				return
 			}
-			pw.Close()
+			_ = pw.Close()
 		}()
 
 		scanner := bufio.NewScanner(pr)
@@ -963,7 +963,7 @@ func (c *Client) GetContainerStats(ctx context.Context, containerID string) (*Co
 	if err != nil {
 		return nil, fmt.Errorf("failed to get container stats: %w", err)
 	}
-	defer statsResp.Body.Close()
+	defer func() { _ = statsResp.Body.Close() }()
 
 	var stats container.StatsResponse
 	if err := json.NewDecoder(statsResp.Body).Decode(&stats); err != nil {

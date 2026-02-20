@@ -123,7 +123,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cancelFetch != nil {
 				m.cancelFetch()
 			}
-			m.client.Close()
+			_ = m.client.Close()
 			return m, tea.Quit
 		case "r":
 			return m, m.fetchData()
@@ -183,7 +183,7 @@ func (m Model) View() string {
 	// Header
 	b.WriteString(styles.Title.Render("🐙 Octo Docker Status"))
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("Server: %s | %s\n", m.serverVersion, m.osInfo))
+	fmt.Fprintf(&b, "Server: %s | %s\n", m.serverVersion, m.osInfo)
 	b.WriteString(strings.Repeat("─", 50))
 	b.WriteString("\n\n")
 
@@ -193,19 +193,19 @@ func (m Model) View() string {
 
 	b.WriteString(styles.Section.Render("Containers"))
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("  %s %s\n", styles.Label.Render("Running:"), styles.Success.Render(fmt.Sprintf("%d", running))))
-	b.WriteString(fmt.Sprintf("  %s %s\n", styles.Label.Render("Stopped:"), styles.Warning.Render(fmt.Sprintf("%d", stopped))))
-	b.WriteString(fmt.Sprintf("  %s %s\n", styles.Label.Render("Total:"), styles.Value.Render(fmt.Sprintf("%d", len(m.containers)))))
+	fmt.Fprintf(&b, "  %s %s\n", styles.Label.Render("Running:"), styles.Success.Render(fmt.Sprintf("%d", running)))
+	fmt.Fprintf(&b, "  %s %s\n", styles.Label.Render("Stopped:"), styles.Warning.Render(fmt.Sprintf("%d", stopped)))
+	fmt.Fprintf(&b, "  %s %s\n", styles.Label.Render("Total:"), styles.Value.Render(fmt.Sprintf("%d", len(m.containers))))
 	b.WriteString("\n")
 
 	// Images section
 	b.WriteString(styles.Section.Render("Images"))
 	b.WriteString("\n")
 	dangling := m.danglingCount
-	b.WriteString(fmt.Sprintf("  %s %s\n", styles.Label.Render("Total:"), styles.Value.Render(fmt.Sprintf("%d", len(m.images)))))
-	b.WriteString(fmt.Sprintf("  %s %s\n", styles.Label.Render("Dangling:"), styles.Warning.Render(fmt.Sprintf("%d", dangling))))
+	fmt.Fprintf(&b, "  %s %s\n", styles.Label.Render("Total:"), styles.Value.Render(fmt.Sprintf("%d", len(m.images))))
+	fmt.Fprintf(&b, "  %s %s\n", styles.Label.Render("Dangling:"), styles.Warning.Render(fmt.Sprintf("%d", dangling)))
 	if m.diskUsage != nil {
-		b.WriteString(fmt.Sprintf("  %s %s\n", styles.Label.Render("Size:"), styles.Value.Render(format.Size(uint64(m.diskUsage.Images)))))
+		fmt.Fprintf(&b, "  %s %s\n", styles.Label.Render("Size:"), styles.Value.Render(format.Size(uint64(m.diskUsage.Images))))
 	}
 	b.WriteString("\n")
 
@@ -213,10 +213,10 @@ func (m Model) View() string {
 	b.WriteString(styles.Section.Render("Volumes"))
 	b.WriteString("\n")
 	unused := m.unusedCount
-	b.WriteString(fmt.Sprintf("  %s %s\n", styles.Label.Render("Total:"), styles.Value.Render(fmt.Sprintf("%d", len(m.volumes)))))
-	b.WriteString(fmt.Sprintf("  %s %s\n", styles.Label.Render("Unused:"), styles.Warning.Render(fmt.Sprintf("%d", unused))))
+	fmt.Fprintf(&b, "  %s %s\n", styles.Label.Render("Total:"), styles.Value.Render(fmt.Sprintf("%d", len(m.volumes))))
+	fmt.Fprintf(&b, "  %s %s\n", styles.Label.Render("Unused:"), styles.Warning.Render(fmt.Sprintf("%d", unused)))
 	if m.diskUsage != nil {
-		b.WriteString(fmt.Sprintf("  %s %s\n", styles.Label.Render("Size:"), styles.Value.Render(format.Size(uint64(m.diskUsage.Volumes)))))
+		fmt.Fprintf(&b, "  %s %s\n", styles.Label.Render("Size:"), styles.Value.Render(format.Size(uint64(m.diskUsage.Volumes))))
 	}
 	b.WriteString("\n")
 
@@ -224,9 +224,9 @@ func (m Model) View() string {
 	if m.diskUsage != nil {
 		b.WriteString(styles.Section.Render("Disk Usage"))
 		b.WriteString("\n")
-		b.WriteString(fmt.Sprintf("  %s %s\n", styles.Label.Render("Total:"), styles.Value.Render(format.Size(uint64(m.diskUsage.Total)))))
-		b.WriteString(fmt.Sprintf("  %s %s\n", styles.Label.Render("Reclaimable:"), styles.Success.Render(format.Size(uint64(m.diskUsage.TotalReclaimable)))))
-		b.WriteString(fmt.Sprintf("  %s %s\n", styles.Label.Render("Build Cache:"), styles.Value.Render(format.Size(uint64(m.diskUsage.BuildCache)))))
+		fmt.Fprintf(&b, "  %s %s\n", styles.Label.Render("Total:"), styles.Value.Render(format.Size(uint64(m.diskUsage.Total))))
+		fmt.Fprintf(&b, "  %s %s\n", styles.Label.Render("Reclaimable:"), styles.Success.Render(format.Size(uint64(m.diskUsage.TotalReclaimable))))
+		fmt.Fprintf(&b, "  %s %s\n", styles.Label.Render("Build Cache:"), styles.Value.Render(format.Size(uint64(m.diskUsage.BuildCache))))
 	}
 
 	// Warnings

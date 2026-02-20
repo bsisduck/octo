@@ -35,7 +35,7 @@ func runVersion(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Docker: Not connected (%v)\n", err)
 		return nil
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 	info, err := client.GetServerInfo(ctx)

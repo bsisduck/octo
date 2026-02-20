@@ -103,7 +103,7 @@ func runDiagnose(cmd *cobra.Command, args []string) error {
 		Status:  "ok",
 		Message: "Connected to Docker daemon",
 	})
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// Check 2: Docker version
 	if textMode {
@@ -517,9 +517,10 @@ func printDiagnosticSummary(results []DiagnosticResult, verbose bool) {
 		fmt.Println(titleStyle.Render("Detailed Results"))
 		for _, r := range results {
 			icon := okStyle.Render("✓")
-			if r.Status == "warn" {
+			switch r.Status {
+			case "warn":
 				icon = warnStyle.Render("!")
-			} else if r.Status == "error" {
+			case "error":
 				icon = errorStyle.Render("✗")
 			}
 			fmt.Printf("\n  %s %s: %s\n", icon, r.Name, r.Message)
